@@ -1,0 +1,11 @@
+{
+    "calls": {
+        "AAT": {
+            "method": "get",
+            "name": "API Call",
+            "publish_as": "data",
+            "rank": 0
+        }
+    },
+    "human": "New API"
+}

@@ -1,0 +1,25 @@
+{
+    "assets": {
+        "AAG": {
+            "name": "robodogjs",
+            "url": "//dd7tel2830j4w.cloudfront.net/f1550425305140x505543046492519040/transloadit.min.js"
+        },
+        "AAH": {
+            "name": "robodogcss",
+            "url": "//dd7tel2830j4w.cloudfront.net/f1550425323424x127923606973563420/style.min.css"
+        }
+    },
+    "dependencies": {
+        "use_jquery": false
+    },
+    "shared_keys": {
+        "AAR": {
+            "caption": "TEMPLATE ID",
+            "type": "client_safe"
+        },
+        "AAS": {
+            "caption": "AUTH KEY",
+            "type": "client_safe"
+        }
+    }
+}
