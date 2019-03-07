@@ -20,6 +20,10 @@
         "AAS": {
             "caption": "AUTH KEY",
             "type": "client_safe"
+        },
+        "AAl": {
+            "caption": "NOTIFY URL",
+            "type": "client_safe"
         }
     }
 }
