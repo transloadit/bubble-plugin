@@ -1,0 +1,31 @@
+{
+    "add_is_visible": true,
+    "category": "visual elements",
+    "default_dim": {
+        "height": 270,
+        "width": 480
+    },
+    "display": "VideoWrapper",
+    "edit_mode_image": "//s3.amazonaws.com/appforest_uf/f1552250715978x152008030132475100/im.jpeg",
+    "fields": {
+        "AAq": {
+            "caption": "src",
+            "default_val": "NIL",
+            "editor": "DynamicValue",
+            "long_text": true,
+            "name": "src",
+            "rank": 0,
+            "value": "text"
+        }
+    },
+    "icon": "ion-android-checkbox-blank",
+    "property_applications": {
+        "Background": false,
+        "Border": true,
+        "BoxShadow": false,
+        "MinWidth": true,
+        "Padding": false,
+        "resizable": true
+    },
+    "support_autobinding": false
+}
