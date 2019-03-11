@@ -1,14 +1,18 @@
 function(properties, context) {
     //Load any data 
 
-    window.Uppy.pick({
+    Robodog.pick({
         target: 'body',
-        maxNumberOfFiles: 1,
+        restrictions: {
+            maxNumberOfFiles: 1,
+            maxFileSize: 5242880
+        },
         params: {
             auth: { key: context.keys['AUTH KEY'] },
             template_id: context.keys['TEMPLATE ID']
         },
-        waitForEncoding: true
+        waitForEncoding: true,
+        providers: ['url', 'webcam']
     })
         .then((bundle) => {
             fetch(context.keys['NOTIFY URL'], {
