@@ -12,7 +12,7 @@ function(properties, context) {
             template_id: context.keys['TEMPLATE ID']
         },
         waitForEncoding: true,
-        providers: ['url', 'webcam']
+        providers: ['url', 'webcam', 'dropbox', 'google-drive', 'instagram']
     })
         .then((bundle) => {
             fetch(context.keys['NOTIFY URL'], {
