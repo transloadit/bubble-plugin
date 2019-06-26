@@ -1,17 +1,9 @@
 function(instance, properties, context) {
-	const config = {
-        sources: [
-          {
-            type: 'mp4',
-            src: properties.src,
-          }
-        ],
-      };
+	var x = document.createElement("VIDEO");
 
-      //const element = document.getElementById('playerContainer');
-      const player = IndigoPlayer.init(instance.canvas, config);
-
-    
-
-
+    if (x.canPlayType("video/mp4")) {
+        x.setAttribute("src",properties.src);
+        x.setAttribute("controls", "controls");
+    }
+    instance.canvas.appendChild(x);
 }

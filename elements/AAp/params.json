@@ -2,8 +2,8 @@
     "add_is_visible": true,
     "category": "visual elements",
     "default_dim": {
-        "height": 270,
-        "width": 480
+        "height": 258,
+        "width": 459
     },
     "display": "VideoWrapper",
     "edit_mode_image": "//s3.amazonaws.com/appforest_uf/f1552250715978x152008030132475100/im.jpeg",
