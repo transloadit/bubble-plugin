@@ -1,0 +1,13 @@
+{
+    "categories": {
+        "0": "technical"
+    },
+    "demo_page": "https://bubble.is/page?name=index&id=bubtran&test_plugin=1550344595465x140038650298630140_current&tab=tabs-1",
+    "description": "A Plugin that enables you to upload files to Transloadit for encoding and returns a response via your notification URL",
+    "image": "//s3.amazonaws.com/appforest_uf/f1551773910041x381779185758073900/logo.svg",
+    "instructions": "",
+    "license": "open_source",
+    "link": "https://transloadit.com",
+    "name": "uppy-transloadit",
+    "plugin_instructions": "Please input your transloadit auth key in the settings page alongside your template ID. \n\nAlso, hook the open action of the plugin to a button, so the modal to select files is shown up."
+}

@@ -1,12 +1,16 @@
 function(properties, context) {
     //Load any data 
 
+    let restrictions = {
+            maxNumberOfFiles: 1,
+            maxFileSize: context.keys['MAX FILE SIZE'] || 5242880
+    }
+    if(context.keys['ALLOWED FILE TYPES']){
+        restrictions.allowedFileTypes = context.keys['ALLOWED FILE TYPES'].split(" ")
+    }
     Robodog.pick({
         target: 'body',
-        restrictions: {
-            maxNumberOfFiles: 1,
-            maxFileSize: 5242880
-        },
+        restrictions: restrictions,
         params: {
             auth: { key: context.keys['AUTH KEY'] },
             template_id: context.keys['TEMPLATE ID']

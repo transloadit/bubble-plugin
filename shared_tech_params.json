@@ -24,6 +24,14 @@
         "AAl": {
             "caption": "NOTIFY URL",
             "type": "client_safe"
+        },
+        "AAr": {
+            "caption": "MAX FILE SIZE",
+            "type": "client_safe"
+        },
+        "AAs": {
+            "caption": "ALLOWED FILE TYPES",
+            "type": "client_safe"
         }
     }
 }
