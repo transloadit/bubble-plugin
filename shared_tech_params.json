@@ -32,6 +32,10 @@
         "AAs": {
             "caption": "ALLOWED FILE TYPES",
             "type": "client_safe"
+        },
+        "AAt": {
+            "caption": "ALLOWED SOURCES",
+            "type": "client_safe"
         }
     }
 }

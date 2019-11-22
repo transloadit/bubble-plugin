@@ -8,6 +8,7 @@ function(properties, context) {
     if(context.keys['ALLOWED FILE TYPES']){
         restrictions.allowedFileTypes = context.keys['ALLOWED FILE TYPES'].split(" ")
     }
+    
     Robodog.pick({
         target: 'body',
         restrictions: restrictions,
@@ -16,7 +17,7 @@ function(properties, context) {
             template_id: context.keys['TEMPLATE ID']
         },
         waitForEncoding: true,
-        providers: ['url', 'webcam', 'dropbox', 'google-drive', 'instagram']
+        providers: context.keys['ALLOWED SOURCES'] ? context.keys['ALLOWED FILE TYPES'].split(" ") : ['url', 'webcam', 'dropbox', 'google-drive', 'instagram']
     })
         .then((bundle) => {
             fetch(context.keys['NOTIFY URL'], {
