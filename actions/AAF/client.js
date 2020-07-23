@@ -2,7 +2,6 @@ function(properties, context) {
     //Load any data 
 
     let restrictions = {
-            maxNumberOfFiles: 1,
             maxFileSize: parseInt(context.keys['MAX FILE SIZE']) || 5242880
     }
     if(context.keys['ALLOWED FILE TYPES']){
