@@ -117,3 +117,19 @@ test('uploads a real file and exposes real processed results from the built Bubb
   expect(download.ok()).toBe(true)
   expect((await download.body()).length).toBeGreaterThan(0)
 })
+
+test('updates only the launcher label and preserves the modal close button', async ({ page }) => {
+  await page.evaluate(async () => {
+    await window.mount({ inline_dashboard: false, button_label: 'First label' })
+  })
+  await page.evaluate(() => {
+    window.updateElement(
+      window.instance,
+      { inline_dashboard: false, button_label: 'New label' },
+      window.context,
+    )
+  })
+  await expect(page.getByRole('button', { name: 'New label', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'New label', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Close Modal', exact: true })).toHaveText('×')
+})

@@ -25,7 +25,7 @@
       "type": "client_safe"
     },
     "AAt": {
-      "caption": "ALLOWED SOURCES",
+      "caption": "ALLOWED SOURCES (unused; local files only)",
       "type": "client_safe"
     }
   }

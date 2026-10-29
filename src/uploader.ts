@@ -17,13 +17,14 @@ function publish(instance: Instance, values: Record<string, unknown>) {
   for (const [name, value] of Object.entries(values)) instance.publishState(name, value)
 }
 export function fail(instance: Instance, error: unknown) {
+  const alreadyFailed = instance.data.failed
   instance.data.failed = true
   instance.data.isUploading = false
   publish(instance, {
     is_uploading: false,
     error_message: error instanceof Error ? error.message : String(error),
   })
-  instance.triggerEvent('error')
+  if (!alreadyFailed) instance.triggerEvent('error')
 }
 function positive(value: number | undefined, fallback: number) {
   const number = value ?? fallback
@@ -65,10 +66,11 @@ export function initialize(instance: Instance, _context: Context) {
 }
 export function update(instance: Instance, properties: Properties, _context: Context) {
   try {
+    const types = properties.allowed_file_types?.split(/[\s,]+/).filter(Boolean)
     const restrictions = {
       maxNumberOfFiles: positive(properties.max_files, 1),
       maxFileSize: positive(properties.max_file_size, 5 * 1024 * 1024),
-      allowedFileTypes: properties.allowed_file_types?.split(/[\s,]+/).filter(Boolean) ?? null,
+      allowedFileTypes: types?.length ? types : null,
     }
     instance.data.properties = properties
     const inline = properties.inline_dashboard !== false
@@ -101,16 +103,20 @@ export function update(instance: Instance, properties: Properties, _context: Con
         })
         instance.data.resizeObserver.observe(root)
       }
+      const active = new Set<string>()
+      const cancelled = new Set<string>()
       if (!inline) {
         const button = document.createElement('button')
         button.type = 'button'
+        button.dataset.transloaditUpload = ''
         button.textContent = properties.button_label || 'Upload files'
         button.onclick = () => {
           void uppy.getPlugin('Dashboard')?.openModal()
         }
         root.appendChild(button)
       }
-      uppy.on('upload', () => {
+      uppy.on('upload', (id) => {
+        active.add(id)
         instance.data.failed = false
         instance.data.isUploading = true
         publish(instance, { ...empty(), is_uploading: true })
@@ -133,6 +139,9 @@ export function update(instance: Instance, properties: Properties, _context: Con
         })
       })
       uppy.on('complete', (result) => {
+        const id = result.uploadID ?? ''
+        active.delete(id)
+        if (cancelled.delete(id)) return
         instance.data.isUploading = false
         instance.publishState('is_uploading', false)
         if (!instance.data.failed && !result.failed?.length) {
@@ -142,12 +151,19 @@ export function update(instance: Instance, properties: Properties, _context: Con
       })
       uppy.on('error', (error) => fail(instance, error))
       uppy.on('upload-error', (_file, error) => fail(instance, error))
-      uppy.on('restriction-failed', (_file, error) => fail(instance, error))
+      uppy.on('restriction-failed', (_file, error) => {
+        instance.publishState('error_message', error.message)
+        instance.triggerEvent('error')
+      })
       uppy.on('transloadit:assembly-error', (_assembly, error) => fail(instance, error))
-      uppy.on('cancel-all', () => resetStates(instance))
+      uppy.on('cancel-all', () => {
+        for (const id of active) cancelled.add(id)
+        active.clear()
+        resetStates(instance)
+      })
     } else {
       instance.data.uppy.setOptions({ restrictions })
-      const button = instance.data.root?.querySelector('button')
+      const button = instance.data.root?.querySelector('button[data-transloadit-upload]')
       if (!instance.data.mode && button)
         button.textContent = properties.button_label || 'Upload files'
     }

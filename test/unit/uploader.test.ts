@@ -30,7 +30,7 @@ const { clients, MockUppy } = vi.hoisted(() => {
     getPlugin(name: string) {
       return this.plugins.get(name)
     }
-    cancelAll = vi.fn()
+    cancelAll = vi.fn(() => this.emit('cancel-all'))
     destroy() {
       this.destroyed = true
     }
@@ -102,7 +102,7 @@ describe('upload states and failures', () => {
 
   it('publishes real results before signaling completion, and clears stale results on the next upload', () => {
     const client = clients[0]
-    client.emit('upload')
+    client.emit('upload', 'upload-1')
     expect(states.is_uploading).toBe(true)
     expect(instance.triggerEvent).toHaveBeenCalledWith('upload_started')
     client.emit('progress', 64)
@@ -117,11 +117,11 @@ describe('upload states and failures', () => {
     expect(states.result_urls).toEqual(['https://example.com/file.png'])
     expect(JSON.parse(String(states.assembly_json))).toEqual(assembly)
     expect(JSON.parse(String(states.results_json))).toEqual(assembly.results)
-    client.emit('complete', { failed: [] })
+    client.emit('complete', { uploadID: 'upload-1', successful: [{}], failed: [] })
     expect(instance.triggerEvent).toHaveBeenLastCalledWith('completed')
     expect(states.is_uploading).toBe(false)
     expect(states.progress).toBe(100)
-    client.emit('upload')
+    client.emit('upload', 'upload-1')
     expect(states.result_urls).toEqual([])
     expect(states.assembly_json).toBe('')
   })
@@ -129,14 +129,13 @@ describe('upload states and failures', () => {
   it.each([
     'error',
     'upload-error',
-    'restriction-failed',
     'transloadit:assembly-error',
   ])('publishes %s without a false completed event', (event) => {
     const client = clients[0]
-    client.emit('upload')
+    client.emit('upload', 'upload-1')
     const error = new Error('API request failed')
     client.emit(event, ...(event === 'error' ? [error] : [null, error]))
-    client.emit('complete', { failed: [] })
+    client.emit('complete', { uploadID: 'upload-1', successful: [{}], failed: [] })
     expect(states.error_message).toBe('API request failed')
     expect(states.is_uploading).toBe(false)
     expect(instance.triggerEvent).not.toHaveBeenCalledWith('completed')
@@ -148,7 +147,7 @@ describe('upload states and failures', () => {
   })
 
   it('cancels uploads and resets all states', () => {
-    clients[0].emit('upload')
+    clients[0].emit('upload', 'upload-1')
     reset(instance)
     expect(clients[0].cancelAll).toHaveBeenCalledOnce()
     expect(states).toMatchObject({ is_uploading: false, progress: 0, error_message: '' })
@@ -197,7 +196,7 @@ describe('upload states and failures', () => {
   })
 
   it('does not destroy an active upload when Bubble changes the display mode', () => {
-    clients[0].emit('upload')
+    clients[0].emit('upload', 'upload-1')
     update(instance, { ...properties, inline_dashboard: false }, context)
     expect(clients).toHaveLength(1)
     expect(clients[0].destroyed).toBe(false)
@@ -259,5 +258,53 @@ describe('legacy open action', () => {
     )
     clients[0].emit('dashboard:modal-closed')
     vi.unstubAllGlobals()
+  })
+})
+
+describe('council regression cases', () => {
+  beforeEach(() => {
+    initialize(instance, context)
+    update(instance, properties, context)
+  })
+
+  it.each(['', ' ,  '])('treats blank allowed types (%j) as unrestricted', (allowed_file_types) => {
+    update(instance, { ...properties, allowed_file_types }, context)
+    expect(clients[0].setOptions).toHaveBeenLastCalledWith({
+      restrictions: expect.objectContaining({ allowedFileTypes: null }),
+    })
+  })
+
+  it('signals an upload failure only once across overlapping Uppy error events', () => {
+    const client = clients[0]
+    client.emit('upload', 'upload-1')
+    const error = new Error('Assembly failed')
+    client.emit('upload-error', null, error)
+    client.emit('error', error)
+    client.emit('transloadit:assembly-error', {}, error)
+    expect(
+      vi.mocked(instance.triggerEvent).mock.calls.filter(([event]) => event === 'error'),
+    ).toHaveLength(1)
+  })
+
+  it('reports rejected additions without failing the active upload', () => {
+    const client = clients[0]
+    client.emit('upload', 'upload-1')
+    client.emit('restriction-failed', null, new Error('Too many files'))
+    expect(states.is_uploading).toBe(true)
+    expect(states.error_message).toBe('Too many files')
+    client.emit('complete', { uploadID: 'upload-1', successful: [{}], failed: [] })
+    expect(instance.triggerEvent).toHaveBeenLastCalledWith('completed')
+  })
+
+  it('ignores cancelled completions even after a subsequent upload starts', () => {
+    const client = clients[0]
+    client.emit('upload', 'cancelled-upload')
+    reset(instance)
+    client.emit('upload', 'next-upload')
+    client.emit('complete', { uploadID: 'cancelled-upload', successful: [], failed: [] })
+    expect(states.is_uploading).toBe(true)
+    expect(instance.triggerEvent).not.toHaveBeenCalledWith('completed')
+    client.emit('complete', { uploadID: 'next-upload', successful: [{}], failed: [] })
+    expect(instance.triggerEvent).toHaveBeenLastCalledWith('completed')
   })
 })

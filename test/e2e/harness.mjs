@@ -4,6 +4,10 @@ import { createServer } from 'node:http'
 
 export async function startHarness() {
   const headers = await readFile('html_headers.html', 'utf8')
+  const { fields } = JSON.parse(await readFile('elements/AAu/params.json', 'utf8'))
+  const defaults = Object.fromEntries(
+    Object.values(fields).map((field) => [field.name, field.default_val]),
+  )
   const server = createServer(async (request, response) => {
     try {
       const path = new URL(request.url, 'http://localhost').pathname
@@ -48,7 +52,7 @@ export async function startHarness() {
             window[name + 'Element'] = Function('return (' + code + ')')();
           }
           initializeElement(instance, context);
-          updateElement(instance, properties, context);
+          updateElement(instance, { ...${JSON.stringify(defaults)}, ...properties }, context);
           await instance.data.ready;
         };
         </script></body></html>`)
