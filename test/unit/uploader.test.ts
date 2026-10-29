@@ -36,6 +36,9 @@ const { clients, MockUppy } = vi.hoisted(() => {
     getPlugin(name: string) {
       return this.plugins.get(name)
     }
+    getFiles() {
+      return []
+    }
     cancelAll = vi.fn(() => this.emit('cancel-all'))
     destroy() {
       this.destroyed = true
@@ -244,6 +247,36 @@ describe('upload states and failures', () => {
     update(instance, properties, context)
     update(instance, { ...properties, max_file_size: -1 }, context)
     expect(instance.triggerEvent).toHaveBeenCalledTimes(2)
+  })
+
+  it('blocks new Assemblies until invalid properties are corrected', () => {
+    update(instance, { ...properties, max_file_size: -1, signature: 'sha384:fresh' }, context)
+    clients[0].emit('upload', 'blocked-upload')
+    const options = clients[0].getPlugin('Transloadit').opts
+    expect(() => options.assemblyOptions()).toThrow('positive integers')
+    expect(states.is_uploading).toBe(false)
+    expect(states.error_message).toContain('positive integers')
+    update(instance, { ...properties, signature: 'sha384:fresh' }, context)
+    expect(states.error_message).toBe('')
+    expect(options.assemblyOptions().signature).toBe('sha384:fresh')
+  })
+
+  it('retains property validation across rejected additions and reset', () => {
+    update(instance, { ...properties, max_file_size: -1 }, context)
+    vi.mocked(instance.triggerEvent).mockClear()
+    clients[0].emit('restriction-failed', null, new Error('Disallowed type'))
+    update(instance, { ...properties, max_file_size: -1 }, context)
+    expect(instance.triggerEvent).toHaveBeenCalledExactlyOnceWith('error')
+    reset(instance)
+    expect(states.error_message).toContain('positive integers')
+  })
+
+  it('finishes active processing without hiding an outstanding property error', () => {
+    clients[0].emit('upload', 'active-upload')
+    update(instance, { ...properties, max_file_size: -1 }, context)
+    clients[0].emit('transloadit:complete', { assembly_id: 'finished', results: {} })
+    expect(instance.triggerEvent).toHaveBeenLastCalledWith('completed')
+    expect(states.error_message).toContain('positive integers')
   })
 
   it.each([0, -1, 1.5, Number.NaN])('reports an invalid upload limit (%s)', (limit) => {

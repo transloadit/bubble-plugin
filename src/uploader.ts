@@ -19,7 +19,8 @@ function publish(instance: Instance, values: Record<string, unknown>) {
 function report(instance: Instance, error: unknown, configuration = false) {
   const message = error instanceof Error ? error.message : String(error)
   const duplicate = configuration && instance.data.configurationError === message
-  instance.data.configurationError = configuration ? message : undefined
+  if (configuration) instance.data.configurationError = message
+  instance.data.errorIsConfiguration = message === instance.data.configurationError
   instance.publishState('error_message', message)
   if (!duplicate) instance.triggerEvent('error')
 }
@@ -83,6 +84,7 @@ export function initialize(instance: Instance, _context: Context) {
 }
 export function update(instance: Instance, properties: Properties, context: Context) {
   try {
+    instance.data.properties = properties
     const types = properties.allowed_file_types?.split(/[\s,]+/).filter(Boolean)
     const restrictions = {
       // Preserve the original single-file contract: partial multi-file retries lose Assembly results.
@@ -91,7 +93,6 @@ export function update(instance: Instance, properties: Properties, context: Cont
       allowedFileTypes: types?.length ? types : null,
     }
     if (!instance.data.root) initialize(instance, context)
-    instance.data.properties = properties
     const inline = properties.inline_dashboard !== false
     if (!instance.data.uppy || (inline !== instance.data.mode && !instance.data.isUploading)) {
       destroy(instance)
@@ -106,10 +107,17 @@ export function update(instance: Instance, properties: Properties, context: Cont
           clientName: 'bubble-plugin',
           assemblyOptions: () => {
             try {
+              if (instance.data.configurationError)
+                throw new Error(instance.data.configurationError)
               return assemblyOptions(instance.data.properties ?? {}, !instance.data.legacy)
             } catch (error) {
               // Uppy retryUpload/retryAll reject without emitting a preprocessor error event.
-              failure(error)
+              // Include the file so Dashboard keeps its Retry control after validation fails.
+              uppy.emit(
+                'error',
+                error instanceof Error ? error : new Error(String(error)),
+                uppy.getFiles()[0],
+              )
               throw error
             }
           },
@@ -159,9 +167,13 @@ export function update(instance: Instance, properties: Properties, context: Cont
       uppy.on('upload', () => {
         if (!current()) return
         instance.data.failed = false
-        instance.data.configurationError = undefined
         instance.data.isUploading = true
-        publish(instance, { ...empty(), is_uploading: true })
+        instance.data.errorIsConfiguration = !!instance.data.configurationError
+        publish(instance, {
+          ...empty(),
+          is_uploading: true,
+          error_message: instance.data.configurationError ?? '',
+        })
         instance.triggerEvent('upload_started')
       })
       uppy.on('progress', (progress) => {
@@ -185,7 +197,12 @@ export function update(instance: Instance, properties: Properties, context: Cont
         // Uppy per-file retries omit the generic complete event; processing completion is authoritative.
         if (!instance.data.failed && instance.data.isUploading) {
           instance.data.isUploading = false
-          publish(instance, { is_uploading: false, progress: 100, error_message: '' })
+          instance.data.errorIsConfiguration = !!instance.data.configurationError
+          publish(instance, {
+            is_uploading: false,
+            progress: 100,
+            error_message: instance.data.configurationError ?? '',
+          })
           instance.triggerEvent('completed')
           refreshMode()
         }
@@ -213,7 +230,8 @@ export function update(instance: Instance, properties: Properties, context: Cont
     }
     if (instance.data.configurationError) {
       instance.data.configurationError = undefined
-      instance.publishState('error_message', '')
+      if (instance.data.errorIsConfiguration) instance.publishState('error_message', '')
+      instance.data.errorIsConfiguration = false
     }
   } catch (error) {
     // Property errors recover independently from transfer failures and never stop an active upload.
@@ -224,11 +242,12 @@ function resetStates(instance: Instance) {
   instance.data.isUploading = false
   instance.data.failed = false
   instance.data.configurationError = undefined
+  instance.data.errorIsConfiguration = false
   publish(instance, empty())
 }
 export function reset(instance: Instance) {
-  instance.data.uppy?.cancelAll()
   resetStates(instance)
+  instance.data.uppy?.cancelAll()
 }
 export function open(properties: Properties, context: Context) {
   // Preserve the global action and its existing keys; new elements require signed params.

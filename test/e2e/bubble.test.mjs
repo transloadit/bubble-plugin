@@ -128,6 +128,7 @@ test('reports invalid signing data when a failed file is retried', async ({ page
   expect(await page.evaluate(() => window.events.filter((event) => event === 'error').length)).toBe(
     2,
   )
+  await expect(page.getByRole('button', { name: 'Retry upload', exact: true })).toBeVisible()
 })
 
 test('uploads a real file and exposes real processed results from the built Bubble export', async ({
@@ -135,16 +136,21 @@ test('uploads a real file and exposes real processed results from the built Bubb
   request,
 }) => {
   test.skip(!real, 'Run yarn test:e2e with opentest credentials')
-  await page.evaluate(async () => {
-    const options = await fetch('/options').then((response) => response.json())
-    await window.mount({ ...options, inline_dashboard: true })
-  })
+  await page.evaluate(async () => window.mount({ inline_dashboard: true }))
   await page.locator('input[type=file]').first().setInputFiles('test/fixtures/upload.png')
   await page.getByRole('button', { name: /Upload 1 file/ }).click()
+  await expect.poll(() => page.evaluate(() => window.events.includes('error'))).toBe(true)
+  await page.evaluate(async () => {
+    const options = await fetch('/options').then((response) => response.json())
+    window.updateElement(window.instance, { ...options, inline_dashboard: true }, window.context)
+  })
+  await page.getByRole('button', { name: 'Retry upload', exact: true }).click()
   await expect
     .poll(() => page.evaluate(() => window.events.includes('completed')), { timeout: 100_000 })
     .toBe(true)
-  expect(await page.evaluate(() => window.events.includes('error'))).toBe(false)
+  expect(await page.evaluate(() => window.events.filter((event) => event === 'error').length)).toBe(
+    1,
+  )
   const result = await page.evaluate(() => {
     const assembly = JSON.parse(window.states.assembly_json)
     const file = JSON.parse(window.states.results_json).resize[0]
@@ -177,6 +183,9 @@ test('uploads a real file and exposes real processed results from the built Bubb
     )
     .toBe(2)
   expect(await page.evaluate(() => window.states.result_urls.length)).toBe(1)
+  const second = await request.get(await page.evaluate(() => window.states.result_urls[0]))
+  expect(second.ok()).toBe(true)
+  expect((await second.body()).length).toBeGreaterThan(0)
 })
 
 test('updates only the launcher label and preserves the modal close button', async ({ page }) => {
