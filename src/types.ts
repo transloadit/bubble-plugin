@@ -26,6 +26,7 @@ export interface Instance {
     failed?: boolean
     configurationError?: string
     errorIsConfiguration?: boolean
+    assemblyId?: string
     failedAssemblies?: Set<string>
     legacy?: boolean
   }

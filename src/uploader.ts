@@ -1,6 +1,6 @@
 import Uppy from '@uppy/core'
 import Dashboard from '@uppy/dashboard'
-import Transloadit from '@uppy/transloadit'
+import Transloadit, { type AssemblyResponse } from '@uppy/transloadit'
 
 import type { Context, Instance, Properties } from './types'
 
@@ -15,6 +15,9 @@ const empty = () => ({
 })
 function publish(instance: Instance, values: Record<string, unknown>) {
   for (const [name, value] of Object.entries(values)) instance.publishState(name, value)
+}
+function currentAssembly(instance: Instance, assembly?: { assembly_id?: string } | null) {
+  return !assembly?.assembly_id || assembly.assembly_id === instance.data.assemblyId
 }
 function report(instance: Instance, error: unknown, configuration = false) {
   const message = error instanceof Error ? error.message : String(error)
@@ -77,6 +80,7 @@ export function initialize(instance: Instance, _context: Context) {
     resetStates(instance)
   }
   instance.data.dispose = dispose
+  // Bubble has no teardown callback; ancestor page/group removals also need to dispose this root.
   instance.data.observer = new MutationObserver(() => {
     if (instance.data.root === root && !root.isConnected) dispose()
   })
@@ -136,7 +140,7 @@ export function update(instance: Instance, properties: Properties, context: Cont
       instance.data.mode = inline
       const failedAssemblies = new Set<string>()
       instance.data.failedAssemblies = failedAssemblies
-      let assemblyId: string | undefined
+      let previousAssembly: AssemblyResponse | undefined
       const current = () => instance.data.uppy === uppy
       const refreshMode = () =>
         queueMicrotask(() => {
@@ -150,7 +154,7 @@ export function update(instance: Instance, properties: Properties, context: Cont
         })
       const failure = (error: unknown) => {
         if (current()) {
-          if (assemblyId) failedAssemblies.add(assemblyId)
+          if (instance.data.assemblyId) failedAssemblies.add(instance.data.assemblyId)
           fail(instance, error)
           refreshMode()
         }
@@ -174,6 +178,11 @@ export function update(instance: Instance, properties: Properties, context: Cont
       }
       uppy.on('upload', () => {
         if (!current()) return
+        // Retire Uppy's old watcher too: transfer failures leave it listening for late status errors.
+        if (previousAssembly) uppy.emit('transloadit:assembly-cancel', previousAssembly)
+        previousAssembly = undefined
+        // Retrying supersedes the old Assembly before its replacement has been created.
+        instance.data.assemblyId = undefined
         instance.data.failed = false
         instance.data.isUploading = true
         instance.data.errorIsConfiguration = !!instance.data.configurationError
@@ -189,7 +198,8 @@ export function update(instance: Instance, properties: Properties, context: Cont
       })
       uppy.on('transloadit:assembly-created', (assembly, fileIDs = []) => {
         if (!current()) return
-        assemblyId = assembly.assembly_id
+        previousAssembly = assembly
+        instance.data.assemblyId = assembly.assembly_id
         // A replacement Assembly needs a new tus resource, not the previous Assembly's upload URL.
         for (const id of fileIDs) {
           const file = uppy.getFile(id)
@@ -235,7 +245,9 @@ export function update(instance: Instance, properties: Properties, context: Cont
       })
       uppy.on('error', failure)
       uppy.on('upload-error', (_file, error) => failure(error))
-      uppy.on('transloadit:assembly-error', (_assembly, error) => failure(error))
+      uppy.on('transloadit:assembly-error', (assembly, error) => {
+        if (currentAssembly(instance, assembly)) failure(error)
+      })
       uppy.on('restriction-failed', (_file, error) => {
         if (!current()) return
         report(instance, error)
@@ -265,6 +277,7 @@ export function update(instance: Instance, properties: Properties, context: Cont
   }
 }
 function resetStates(instance: Instance, configurationError?: string) {
+  instance.data.assemblyId = undefined
   instance.data.isUploading = false
   instance.data.failed = false
   instance.data.configurationError = configurationError
@@ -340,9 +353,12 @@ export function open(properties: Properties, context: Context) {
     if (!instance.data.isUploading) dispose()
   })
   uppy.on('cancel-all', dispose)
-  for (const event of ['error', 'upload-error', 'transloadit:assembly-error'] as const)
+  for (const event of ['error', 'upload-error'] as const)
     uppy.on(event, () => {
       if (closed) dispose()
     })
+  uppy.on('transloadit:assembly-error', (assembly) => {
+    if (closed && currentAssembly(instance, assembly)) dispose()
+  })
   void uppy.getPlugin('Dashboard')?.openModal()
 }

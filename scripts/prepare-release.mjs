@@ -5,6 +5,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 const { version } = JSON.parse(await readFile('package.json', 'utf8'))
 await mkdir('build', { recursive: true })
 const file = `build/bubble-plugin-${version}.zip`
+// CI artifacts include the commit SHA; this filename labels a candidate, not a published Bubble version.
 // Only Bubble's export goes in the handoff, never the checkout or its environment.
 const entries = [
   'actions',

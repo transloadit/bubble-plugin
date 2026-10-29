@@ -445,6 +445,28 @@ describe('upload session isolation', () => {
     expect(instance.triggerEvent).toHaveBeenLastCalledWith('completed')
   })
 
+  it.each([
+    false,
+    true,
+  ])('ignores old Assembly errors after retry starts (created=%s)', (created) => {
+    const client = clients[0]
+    client.emit('upload', 'first-upload')
+    client.emit('transloadit:assembly-created', { assembly_id: 'old' })
+    client.emit('error', new Error('Transfer failed'))
+    client.emit('upload', 'retry-upload')
+    if (created) client.emit('transloadit:assembly-created', { assembly_id: 'retry' })
+    client.emit(
+      'transloadit:assembly-error',
+      { assembly_id: 'old' },
+      new Error('Late status error'),
+    )
+    expect(states.is_uploading).toBe(true)
+    expect(states.error_message).toBe('')
+    if (!created) client.emit('transloadit:assembly-created', { assembly_id: 'retry' })
+    client.emit('transloadit:complete', { assembly_id: 'retry', results: {} })
+    expect(instance.triggerEvent).toHaveBeenLastCalledWith('completed')
+  })
+
   it('allows a detached Bubble canvas to be attached and updated again', async () => {
     const canvas = '0' in instance.canvas ? instance.canvas[0] : instance.canvas
     canvas.remove()
@@ -456,6 +478,29 @@ describe('upload session isolation', () => {
 })
 
 describe('legacy background upload', () => {
+  it('keeps a dismissed retry alive when the previous Assembly errors late', () => {
+    const fetch = vi.fn().mockResolvedValue({ ok: true })
+    vi.stubGlobal('fetch', fetch)
+    open(properties, { ...context, keys: { 'NOTIFY URL': 'https://example.com/hook' } })
+    const client = clients[0]
+    client.emit('upload', 'first-upload')
+    client.emit('transloadit:assembly-created', { assembly_id: 'old' })
+    client.emit('error', new Error('Transfer failed'))
+    client.emit('upload', 'retry-upload')
+    client.emit('transloadit:assembly-created', { assembly_id: 'retry' })
+    client.emit('dashboard:modal-closed')
+    client.emit(
+      'transloadit:assembly-error',
+      { assembly_id: 'old' },
+      new Error('Late status error'),
+    )
+    expect(client.destroyed).toBe(false)
+    client.emit('transloadit:complete', { assembly_id: 'retry', results: {} })
+    expect(fetch).toHaveBeenCalledExactlyOnceWith('https://example.com/hook', expect.any(Object))
+    expect(client.destroyed).toBe(true)
+    vi.unstubAllGlobals()
+  })
+
   it('does not notify for a failed Assembly completing after retry', () => {
     const fetch = vi.fn().mockResolvedValue({ ok: true })
     vi.stubGlobal('fetch', fetch)

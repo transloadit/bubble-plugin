@@ -297,6 +297,12 @@ for (const phase of ['transfer', 'processing']) {
       }
       client.submitError = async () => {}
       client.cancelAssembly = async () => {}
+      client.getAssemblyStatus = async (url) => ({
+        assembly_id: `fixture-${url.split('/').at(-1)}`,
+        ok: 'ASSEMBLY_COMPLETED',
+        uploads: [],
+        results: {},
+      })
     })
     await page.locator('input[type=file]').first().setInputFiles('test/fixtures/upload.png')
     await page.getByRole('button', { name: /Upload 1 file/ }).click()
@@ -321,6 +327,17 @@ for (const phase of ['transfer', 'processing']) {
         page.evaluate(() => window.instance.data.uppy.getFiles()[0].progress.uploadComplete),
       )
       .toBe(true)
+    // An already pending status request can fail after its Assembly's connection was closed.
+    await page.evaluate(() =>
+      window.sources[0].listeners.assembly_error({
+        data: JSON.stringify({ message: 'Late previous Assembly error' }),
+      }),
+    )
+    expect(await page.evaluate(() => window.states.is_uploading)).toBe(true)
+    expect(await page.evaluate(() => window.states.error_message)).toBe('')
+    await page.evaluate(() => window.sources[1].listeners.message({ data: 'assembly_finished' }))
+    await expect.poll(() => page.evaluate(() => window.events.includes('completed'))).toBe(true)
+    expect(await page.evaluate(() => window.states.assembly_id)).toBe('fixture-2')
     await page.evaluate(() => window.resetElement(window.instance, window.context))
   })
 }
