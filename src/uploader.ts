@@ -16,9 +16,12 @@ const empty = () => ({
 function publish(instance: Instance, values: Record<string, unknown>) {
   for (const [name, value] of Object.entries(values)) instance.publishState(name, value)
 }
-function report(instance: Instance, error: unknown) {
-  instance.publishState('error_message', error instanceof Error ? error.message : String(error))
-  instance.triggerEvent('error')
+function report(instance: Instance, error: unknown, configuration = false) {
+  const message = error instanceof Error ? error.message : String(error)
+  const duplicate = configuration && instance.data.configurationError === message
+  instance.data.configurationError = configuration ? message : undefined
+  instance.publishState('error_message', message)
+  if (!duplicate) instance.triggerEvent('error')
 }
 export function fail(instance: Instance, error: unknown) {
   const alreadyFailed = instance.data.failed
@@ -101,8 +104,15 @@ export function update(instance: Instance, properties: Properties, context: Cont
           waitForEncoding: true,
           errorReporting: false,
           clientName: 'bubble-plugin',
-          assemblyOptions: () =>
-            assemblyOptions(instance.data.properties ?? {}, !instance.data.legacy),
+          assemblyOptions: () => {
+            try {
+              return assemblyOptions(instance.data.properties ?? {}, !instance.data.legacy)
+            } catch (error) {
+              // Uppy retryUpload/retryAll reject without emitting a preprocessor error event.
+              failure(error)
+              throw error
+            }
+          },
         })
         .use(
           Dashboard,
@@ -149,6 +159,7 @@ export function update(instance: Instance, properties: Properties, context: Cont
       uppy.on('upload', () => {
         if (!current()) return
         instance.data.failed = false
+        instance.data.configurationError = undefined
         instance.data.isUploading = true
         publish(instance, { ...empty(), is_uploading: true })
         instance.triggerEvent('upload_started')
@@ -200,14 +211,19 @@ export function update(instance: Instance, properties: Properties, context: Cont
       if (!instance.data.mode && button)
         button.textContent = properties.button_label || 'Upload files'
     }
+    if (instance.data.configurationError) {
+      instance.data.configurationError = undefined
+      instance.publishState('error_message', '')
+    }
   } catch (error) {
-    if (instance.data.isUploading) report(instance, error)
-    else fail(instance, error)
+    // Property errors recover independently from transfer failures and never stop an active upload.
+    report(instance, error, true)
   }
 }
 function resetStates(instance: Instance) {
   instance.data.isUploading = false
   instance.data.failed = false
+  instance.data.configurationError = undefined
   publish(instance, empty())
 }
 export function reset(instance: Instance) {

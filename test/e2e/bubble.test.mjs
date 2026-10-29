@@ -104,6 +104,32 @@ test('releases modal keyboard focus when Bubble resets the element', async ({ pa
   await expect(page.getByRole('button', { name: 'Outside two', exact: true })).toBeFocused()
 })
 
+test('reports invalid signing data when a failed file is retried', async ({ page }) => {
+  await page.evaluate(async () => window.mount({ inline_dashboard: true }))
+  await page.locator('input[type=file]').first().setInputFiles('test/fixtures/upload.png')
+  await page.getByRole('button', { name: /Upload 1 file/ }).click()
+  await expect.poll(() => page.evaluate(() => window.events.includes('error'))).toBe(true)
+  await page.evaluate(async () => {
+    window.updateElement(
+      window.instance,
+      {
+        inline_dashboard: true,
+        params: JSON.stringify({ auth: { key: 'test', expires: 'later' }, template_id: 'test' }),
+        signature: '',
+      },
+      window.context,
+    )
+    await Promise.resolve()
+    const uppy = window.instance.data.uppy
+    await uppy.retryUpload(uppy.getFiles()[0].id).catch(() => {})
+  })
+  expect(await page.evaluate(() => window.states.is_uploading)).toBe(false)
+  expect(await page.evaluate(() => window.states.error_message)).toContain('server-signed params')
+  expect(await page.evaluate(() => window.events.filter((event) => event === 'error').length)).toBe(
+    2,
+  )
+})
+
 test('uploads a real file and exposes real processed results from the built Bubble export', async ({
   page,
   request,

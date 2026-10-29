@@ -24,6 +24,7 @@ export interface Instance {
     mode?: boolean
     isUploading?: boolean
     failed?: boolean
+    configurationError?: string
     legacy?: boolean
   }
   publishState: (name: string, value: unknown) => void

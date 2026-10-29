@@ -223,6 +223,29 @@ describe('upload states and failures', () => {
     expect(instance.triggerEvent).toHaveBeenLastCalledWith('completed')
   })
 
+  it('clears corrected property errors without hiding upload failures', () => {
+    update(instance, { ...properties, max_file_size: -1 }, context)
+    update(instance, properties, context)
+    expect(states.error_message).toBe('')
+    clients[0].emit('upload', 'failed-upload')
+    clients[0].emit('error', new Error('Transfer failed'))
+    update(instance, properties, context)
+    expect(states.error_message).toBe('Transfer failed')
+  })
+
+  it('reports a new property error after upload failure and deduplicates unchanged bad updates', () => {
+    clients[0].emit('upload', 'failed-upload')
+    clients[0].emit('error', new Error('Transfer failed'))
+    vi.mocked(instance.triggerEvent).mockClear()
+    update(instance, { ...properties, max_file_size: -1 }, context)
+    update(instance, { ...properties, max_file_size: -1 }, context)
+    expect(states.error_message).toContain('positive integers')
+    expect(instance.triggerEvent).toHaveBeenCalledExactlyOnceWith('error')
+    update(instance, properties, context)
+    update(instance, { ...properties, max_file_size: -1 }, context)
+    expect(instance.triggerEvent).toHaveBeenCalledTimes(2)
+  })
+
   it.each([0, -1, 1.5, Number.NaN])('reports an invalid upload limit (%s)', (limit) => {
     update(instance, { ...properties, max_file_size: limit }, context)
     expect(states.error_message).toContain('positive integers')
