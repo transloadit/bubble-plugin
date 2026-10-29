@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { build } from 'esbuild'
 
 // Uppy 6.0.5 ships the exact core/dashboard/transloadit versions in package.json.
+// The versioned Transloadit CDN is a trusted runtime dependency; keep its pin and typed API in sync.
 const cdn = 'https://releases.transloadit.com/uppy/v6.0.5/uppy.min'
 const modules = {
   '@uppy/core': ['Uppy', '6.3.0'],

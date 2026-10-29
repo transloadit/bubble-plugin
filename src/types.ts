@@ -26,6 +26,7 @@ export interface Instance {
     failed?: boolean
     configurationError?: string
     errorIsConfiguration?: boolean
+    failedAssemblies?: Set<string>
     legacy?: boolean
   }
   publishState: (name: string, value: unknown) => void

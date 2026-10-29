@@ -223,79 +223,104 @@ for (const restrictions of [{ max_file_size: 1 }, { allowed_file_types: '.bin' }
   })
 }
 
-test('starts a fresh tus upload when retry creates a replacement Assembly', async ({ page }) => {
-  const requests = []
-  await page.route(`${harness.url}/assembly/**`, (route) =>
-    route.fulfill({
-      json: { assembly_id: 'fixture', ok: 'ASSEMBLY_UPLOADING', uploads: [], results: {} },
-    }),
-  )
-  await page.route(`${harness.url}/tus/**`, async (route) => {
-    const request = route.request()
-    const path = new URL(request.url()).pathname
-    requests.push(`${request.method()} ${path}`)
-    const headers = { 'Tus-Resumable': '1.0.0' }
-    if (request.method() === 'POST') {
-      await route.fulfill({
-        status: 201,
-        headers: { ...headers, Location: `${harness.url}${path}file` },
-      })
-    } else if (path.startsWith('/tus/1/') && request.method() === 'PATCH') {
-      // A protocol failure without an HTTP error or automatic retry: no data reaches Assembly 1.
-      await route.fulfill({ status: 204, headers })
-    } else {
-      await route.fulfill({
-        status: request.method() === 'HEAD' ? 200 : 204,
-        headers: {
-          ...headers,
-          'Upload-Offset': request.method() === 'HEAD' ? '0' : '98',
-          'Upload-Length': '98',
-        },
-      })
-    }
-  })
-  await page.evaluate(async () => {
-    // Isolate transport recovery from processing. No external API, SSE or telemetry in this test.
-    window.EventSource = class {
-      addEventListener() {}
-      close() {}
-    }
-    await window.mount({
-      inline_dashboard: true,
-      params: JSON.stringify({ auth: { key: 'test', expires: 'later' }, template_id: 'test' }),
-      signature: 'test',
-    })
-    const uppy = window.instance.data.uppy
-    uppy.setOptions({ logger: { debug() {}, warn() {}, error() {} } })
-    uppy.getPlugin('Tus').setOptions({ retryDelays: [] })
-    const client = uppy.getPlugin('Transloadit').client
-    let number = 0
-    client.createAssembly = async () => {
-      number += 1
-      return {
-        assembly_id: `fixture-${number}`,
-        ok: 'ASSEMBLY_UPLOADING',
-        uploads: [],
-        results: {},
-        assembly_url: `${location.origin}/assembly/${number}`,
-        assembly_ssl_url: `${location.origin}/assembly/${number}`,
-        tus_url: `${location.origin}/tus/${number}/`,
-        websocket_url: `${location.origin}/events`,
-      }
-    }
-    client.submitError = async () => {}
-    client.cancelAssembly = async () => {}
-  })
-  await page.locator('input[type=file]').first().setInputFiles('test/fixtures/upload.png')
-  await page.getByRole('button', { name: /Upload 1 file/ }).click()
-  await expect.poll(() => page.evaluate(() => window.events.includes('error'))).toBe(true)
-  await page.getByRole('button', { name: 'Retry upload', exact: true }).first().click()
-  await expect.poll(() => requests.includes('POST /tus/2/')).toBe(true)
-  expect(requests).not.toContain('HEAD /tus/1/file')
-  await expect
-    .poll(() =>
-      page.evaluate(() => window.instance.data.uppy.getFiles()[0].progress.uploadComplete),
+for (const phase of ['transfer', 'processing']) {
+  test(`starts a fresh tus upload after ${phase} failure`, async ({ page }) => {
+    const requests = []
+    await page.route(`${harness.url}/assembly/**`, (route) =>
+      route.fulfill({
+        json: { assembly_id: 'fixture', ok: 'ASSEMBLY_UPLOADING', uploads: [], results: {} },
+      }),
     )
-    .toBe(true)
-  await page.evaluate(() => window.resetElement(window.instance, window.context))
-})
+    await page.route(`${harness.url}/tus/**`, async (route) => {
+      const request = route.request()
+      const path = new URL(request.url()).pathname
+      requests.push(`${request.method()} ${path}`)
+      const headers = { 'Tus-Resumable': '1.0.0' }
+      if (request.method() === 'POST') {
+        await route.fulfill({
+          status: 201,
+          headers: { ...headers, Location: `${harness.url}${path}file` },
+        })
+      } else if (
+        phase === 'transfer' &&
+        path.startsWith('/tus/1/') &&
+        request.method() === 'PATCH'
+      ) {
+        // A protocol failure without an HTTP error or automatic retry: no data reaches Assembly 1.
+        await route.fulfill({ status: 204, headers })
+      } else {
+        await route.fulfill({
+          status: request.method() === 'HEAD' ? 200 : 204,
+          headers: {
+            ...headers,
+            'Upload-Offset': request.method() === 'HEAD' ? '0' : '98',
+            'Upload-Length': '98',
+          },
+        })
+      }
+    })
+    await page.evaluate(async () => {
+      // Drive the actual processing-error path without an external API, SSE connection or telemetry.
+      window.sources = []
+      window.EventSource = class {
+        listeners = {}
+        constructor() {
+          window.sources.push(this)
+        }
+        addEventListener(name, callback) {
+          this.listeners[name] = callback
+        }
+        close() {}
+      }
+      await window.mount({
+        inline_dashboard: true,
+        params: JSON.stringify({ auth: { key: 'test', expires: 'later' }, template_id: 'test' }),
+        signature: 'test',
+      })
+      const uppy = window.instance.data.uppy
+      uppy.setOptions({ logger: { debug() {}, warn() {}, error() {} } })
+      uppy.getPlugin('Tus').setOptions({ retryDelays: [] })
+      const client = uppy.getPlugin('Transloadit').client
+      let number = 0
+      client.createAssembly = async () => {
+        number += 1
+        return {
+          assembly_id: `fixture-${number}`,
+          ok: 'ASSEMBLY_UPLOADING',
+          uploads: [],
+          results: {},
+          assembly_url: `${location.origin}/assembly/${number}`,
+          assembly_ssl_url: `${location.origin}/assembly/${number}`,
+          tus_url: `${location.origin}/tus/${number}/`,
+          websocket_url: `${location.origin}/events`,
+        }
+      }
+      client.submitError = async () => {}
+      client.cancelAssembly = async () => {}
+    })
+    await page.locator('input[type=file]').first().setInputFiles('test/fixtures/upload.png')
+    await page.getByRole('button', { name: /Upload 1 file/ }).click()
+    if (phase === 'processing') {
+      await expect
+        .poll(() =>
+          page.evaluate(() => window.instance.data.uppy.getFiles()[0].progress.uploadComplete),
+        )
+        .toBe(true)
+      await page.evaluate(() =>
+        window.sources[0].listeners.assembly_error({
+          data: JSON.stringify({ message: 'Intentional processing failure' }),
+        }),
+      )
+    }
+    await expect.poll(() => page.evaluate(() => window.events.includes('error'))).toBe(true)
+    await page.getByRole('button', { name: 'Retry upload', exact: true }).first().click()
+    await expect.poll(() => requests.includes('POST /tus/2/')).toBe(true)
+    expect(requests).not.toContain('HEAD /tus/1/file')
+    await expect
+      .poll(() =>
+        page.evaluate(() => window.instance.data.uppy.getFiles()[0].progress.uploadComplete),
+      )
+      .toBe(true)
+    await page.evaluate(() => window.resetElement(window.instance, window.context))
+  })
+}

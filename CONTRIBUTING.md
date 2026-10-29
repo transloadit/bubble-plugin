@@ -40,7 +40,9 @@ CI requires `BUBBLE_E2E_TRANSLOADIT_KEY` and `BUBBLE_E2E_TRANSLOADIT_SECRET` as 
 ## Versioning and release candidates
 
 Add a user-facing Changeset with `corepack yarn changeset`. On main, Changesets opens a version PR
-that updates `package.json` and `CHANGELOG.md`. Merge the version PR, then download that commit's
+that updates `package.json` and `CHANGELOG.md`. Before merging, close and reopen it as a maintainer
+if CI is absent: GitHub does not trigger PR workflows for `GITHUB_TOKEN` writes. Wait for its checks
+to pass. Merge the version PR, then download that commit's
 `bubble-candidate-<sha>` artifact from **Release candidate** Actions. The archive and SHA-256 file
 contain only Bubble's export. Locally, `corepack yarn release:prepare` produces the same handoff.
 Candidates are built on main only when no Changesets remain pending; use the version PR's commit for publication.

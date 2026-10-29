@@ -6,11 +6,13 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 jobs:
-  release:
+  version:
     runs-on: ubuntu-latest
     permissions:
       contents: write
       pull-requests: write
+    outputs:
+      hasChangesets: ${{ steps.changesets.outputs.hasChangesets }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -29,10 +31,24 @@ jobs:
           commitMode: github-api
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - if: steps.changesets.outputs.hasChangesets == 'false'
-        run: corepack yarn release:prepare
-      - if: steps.changesets.outputs.hasChangesets == 'false'
-        uses: actions/upload-artifact@v7
+  candidate:
+    needs: version
+    if: needs.version.outputs.hasChangesets == 'false'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '26.12.1'
+      - run: npm install --global corepack@0.36.0 && corepack enable
+      - run: corepack yarn install --immutable
+      # Changesets writes ~/.netrc. This separate runner keeps its token away from candidate checks.
+      - run: corepack yarn release:prepare
+      - uses: actions/upload-artifact@v7
         with:
           name: bubble-candidate-${{ github.sha }}
           path: build/bubble-plugin-*.zip*

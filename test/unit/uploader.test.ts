@@ -430,6 +430,21 @@ describe('upload session isolation', () => {
     expect(instance.triggerEvent).toHaveBeenLastCalledWith('completed')
   })
 
+  it('ignores a failed Assembly status request that resolves after its retry begins', () => {
+    const client = clients[0]
+    client.emit('upload', 'first-upload')
+    client.emit('transloadit:assembly-created', { assembly_id: 'failed' })
+    client.emit('error', new Error('Transfer failed'))
+    client.emit('upload', 'retry-upload')
+    client.emit('transloadit:assembly-created', { assembly_id: 'retry' })
+    client.emit('transloadit:complete', { assembly_id: 'failed', results: {} })
+    expect(states.assembly_id).toBe('retry')
+    expect(states.is_uploading).toBe(true)
+    expect(instance.triggerEvent).not.toHaveBeenCalledWith('completed')
+    client.emit('transloadit:complete', { assembly_id: 'retry', results: {} })
+    expect(instance.triggerEvent).toHaveBeenLastCalledWith('completed')
+  })
+
   it('allows a detached Bubble canvas to be attached and updated again', async () => {
     const canvas = '0' in instance.canvas ? instance.canvas[0] : instance.canvas
     canvas.remove()
@@ -441,6 +456,22 @@ describe('upload session isolation', () => {
 })
 
 describe('legacy background upload', () => {
+  it('does not notify for a failed Assembly completing after retry', () => {
+    const fetch = vi.fn().mockResolvedValue({ ok: true })
+    vi.stubGlobal('fetch', fetch)
+    open(properties, { ...context, keys: { 'NOTIFY URL': 'https://example.com/hook' } })
+    const client = clients[0]
+    client.emit('upload', 'first-upload')
+    client.emit('transloadit:assembly-created', { assembly_id: 'failed' })
+    client.emit('error', new Error('Transfer failed'))
+    client.emit('upload', 'retry-upload')
+    client.emit('transloadit:assembly-created', { assembly_id: 'retry' })
+    client.emit('transloadit:complete', { assembly_id: 'failed', results: {} })
+    expect(fetch).not.toHaveBeenCalled()
+    client.emit('cancel-all')
+    vi.unstubAllGlobals()
+  })
+
   it.each([
     'error',
     'upload-error',

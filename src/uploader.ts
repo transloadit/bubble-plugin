@@ -134,6 +134,9 @@ export function update(instance: Instance, properties: Properties, context: Cont
         )
       instance.data.uppy = uppy
       instance.data.mode = inline
+      const failedAssemblies = new Set<string>()
+      instance.data.failedAssemblies = failedAssemblies
+      let assemblyId: string | undefined
       const current = () => instance.data.uppy === uppy
       const refreshMode = () =>
         queueMicrotask(() => {
@@ -147,6 +150,7 @@ export function update(instance: Instance, properties: Properties, context: Cont
         })
       const failure = (error: unknown) => {
         if (current()) {
+          if (assemblyId) failedAssemblies.add(assemblyId)
           fail(instance, error)
           refreshMode()
         }
@@ -185,16 +189,27 @@ export function update(instance: Instance, properties: Properties, context: Cont
       })
       uppy.on('transloadit:assembly-created', (assembly, fileIDs = []) => {
         if (!current()) return
+        assemblyId = assembly.assembly_id
         // A replacement Assembly needs a new tus resource, not the previous Assembly's upload URL.
         for (const id of fileIDs) {
           const file = uppy.getFile(id)
-          if (file?.tus?.uploadUrl)
-            uppy.setFileState(id, { tus: { ...file.tus, uploadUrl: undefined } })
+          if (file)
+            uppy.setFileState(id, {
+              tus: { ...file.tus, uploadUrl: undefined },
+              progress: {
+                uploadStarted: null,
+                uploadComplete: false,
+                percentage: 0,
+                bytesUploaded: false,
+                bytesTotal: file.size,
+              },
+            })
         }
         instance.publishState('assembly_id', assembly.assembly_id)
       })
       uppy.on('transloadit:complete', (assembly) => {
-        if (!current()) return
+        // A failed Assembly's final status request can resolve after its retry has started.
+        if (!current() || failedAssemblies.has(assembly.assembly_id ?? '')) return
         const results = assembly.results ?? {}
         const urls = Object.values(results)
           .flat()
@@ -306,7 +321,7 @@ export function open(properties: Properties, context: Context) {
   instance.data.root?.querySelector('button[data-transloadit-upload]')?.remove()
   let closed = false
   uppy.on('transloadit:complete', (assembly) => {
-    if (disposed) return
+    if (disposed || instance.data.failedAssemblies?.has(assembly.assembly_id ?? '')) return
     const url = context.keys['NOTIFY URL']
     if (url)
       void fetch(url, {
