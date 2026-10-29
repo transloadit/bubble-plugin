@@ -87,6 +87,23 @@ test('publishes a visible configuration error and recovers after reset', async (
   expect(await page.evaluate(() => window.states.error_message)).toBe('')
 })
 
+test('releases modal keyboard focus when Bubble resets the element', async ({ page }) => {
+  await page.evaluate(async () => {
+    await window.mount({ inline_dashboard: false })
+    for (const label of ['Outside one', 'Outside two']) {
+      const button = document.createElement('button')
+      button.textContent = label
+      document.body.appendChild(button)
+    }
+  })
+  await page.getByRole('button', { name: 'Upload files', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'browse files' })).toBeVisible()
+  await page.evaluate(() => window.resetElement(window.instance, window.context))
+  await page.getByRole('button', { name: 'Outside one', exact: true }).focus()
+  await page.keyboard.press('Tab')
+  await expect(page.getByRole('button', { name: 'Outside two', exact: true })).toBeFocused()
+})
+
 test('uploads a real file and exposes real processed results from the built Bubble export', async ({
   page,
   request,

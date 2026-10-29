@@ -88,3 +88,5 @@ TypeScript, Vitest, tests of the actual built artifact, Changesets, PR CI and we
 We preserve legacy IDs like Zapier preserves saved Zap contracts. Bubble has no Zapier-style CLI
 upload/promote/migrate, so releases produce an export and explicit human handoff. The official CDN
 keeps the export small; a future custom bundle can reduce unused Uppy plugins if download size matters.
+Uploads retain the original one-file limit. Multi-file batches need separate result aggregation and
+partial-retry handling; exposing a larger limit before those exist can silently lose processed results.

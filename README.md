@@ -15,8 +15,8 @@ verified after publication before linking builders to it.
 2. Have your backend return **params** (a JSON string) and **signature** (SHA-384).
    Bind those strings to **Signed Assembly params** and **Signature**. Refresh them before each
    upload; signatures expire. Keep the exact params string, including spaces and key order.
-3. Set **Inline Dashboard** to yes, or no for an upload button. Set allowed types, maximum files,
-   and maximum bytes per file. Defaults: one file, 5 MiB. Sources are local files only.
+3. Set **Inline Dashboard** to yes, or no for an upload button. Set allowed types and maximum bytes
+   per file (default 5 MiB). Each upload accepts one local file, matching the original plugin.
 4. On **Encoding completed**, read **Result URLs** (a list of texts), **Results JSON**, or
    **Assembly JSON**. Other states: **Assembly ID**, **Is uploading**, **Upload progress** (0–100,
    transfer progress; processing may continue), and **Error message**. **Upload started** and

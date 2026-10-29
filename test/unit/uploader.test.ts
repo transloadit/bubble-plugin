@@ -16,7 +16,13 @@ const { clients, MockUppy } = vi.hoisted(() => {
       clients.push(this)
     }
     use(plugin: { name: string }, opts: Record<string, unknown>) {
-      this.plugins.set(plugin.name, { opts, openModal: vi.fn(), setOptions: vi.fn() })
+      this.plugins.set(plugin.name, {
+        opts,
+        openModal: vi.fn(),
+        closeModal: vi.fn(),
+        isModalOpen: () => false,
+        setOptions: vi.fn(),
+      })
       return this
     }
     on(name: string, fn: (...args: unknown[]) => void) {
@@ -156,10 +162,12 @@ describe('upload states and failures', () => {
   })
 
   it('releases Uppy and its DOM observer when Bubble removes the element', async () => {
+    clients[0].emit('upload', 'removed-upload')
     document.body.replaceChildren()
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(clients[0].destroyed).toBe(true)
     expect(instance.data.uppy).toBeUndefined()
+    expect(states.is_uploading).toBe(false)
   })
 
   it('supports the button/modal mode, updates its label and retains the uploader on property changes', () => {
@@ -180,7 +188,7 @@ describe('upload states and failures', () => {
         ...properties,
         inline_dashboard: false,
         button_label: 'Add file',
-        max_files: 3,
+        max_file_size: 2048,
         allowed_file_types: '.png, image/jpeg',
       },
       context,
@@ -188,22 +196,35 @@ describe('upload states and failures', () => {
     expect(button?.textContent).toBe('Add file')
     expect(client.setOptions).toHaveBeenCalledWith({
       restrictions: {
-        maxNumberOfFiles: 3,
-        maxFileSize: 5242880,
+        maxNumberOfFiles: 1,
+        maxFileSize: 2048,
         allowedFileTypes: ['.png', 'image/jpeg'],
       },
     })
   })
 
-  it('does not destroy an active upload when Bubble changes the display mode', () => {
+  it('defers display changes until an active upload has finished', async () => {
     clients[0].emit('upload', 'upload-1')
     update(instance, { ...properties, inline_dashboard: false }, context)
     expect(clients).toHaveLength(1)
     expect(clients[0].destroyed).toBe(false)
+    clients[0].emit('transloadit:complete', { assembly_id: 'finished', results: {} })
+    await Promise.resolve()
+    expect(instance.data.root?.querySelector('button')?.textContent).toBe('Upload files')
+  })
+
+  it('reports invalid dynamic properties without failing an ongoing upload', () => {
+    clients[0].emit('upload', 'active-upload')
+    update(instance, { ...properties, max_file_size: -1 }, context)
+    expect(states.error_message).toContain('positive integers')
+    expect(states.is_uploading).toBe(true)
+    update(instance, properties, context)
+    clients[0].emit('transloadit:complete', { assembly_id: 'finished', results: {} })
+    expect(instance.triggerEvent).toHaveBeenLastCalledWith('completed')
   })
 
   it.each([0, -1, 1.5, Number.NaN])('reports an invalid upload limit (%s)', (limit) => {
-    update(instance, { ...properties, max_files: limit }, context)
+    update(instance, { ...properties, max_file_size: limit }, context)
     expect(states.error_message).toContain('positive integers')
     expect(instance.triggerEvent).toHaveBeenCalledWith('error')
   })
@@ -232,6 +253,15 @@ describe('signing contract', () => {
 })
 
 describe('legacy open action', () => {
+  it.each([
+    ['2048 bytes', 2048],
+    ['10.5', 10],
+  ])('preserves the legacy integer size parsing for %s', (size, expected) => {
+    open({}, { ...context, keys: { 'MAX FILE SIZE': size } })
+    expect(clients[0].opts.restrictions).toMatchObject({ maxFileSize: expected })
+    clients[0].emit('dashboard:modal-closed')
+  })
+
   it('opens current Uppy with existing shared keys and releases it on close', async () => {
     open({}, { ...context, keys: { 'AUTH KEY': 'public-key', 'TEMPLATE ID': 'template' } })
     const client = clients[0]

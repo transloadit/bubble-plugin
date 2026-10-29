@@ -5,7 +5,6 @@ export interface Properties {
   signature?: string
   inline_dashboard?: boolean
   button_label?: string
-  max_files?: number
   max_file_size?: number
   allowed_file_types?: string
 }

@@ -49,15 +49,6 @@
       "optional": true,
       "rank": 3
     },
-    "AAz": {
-      "name": "max_files",
-      "caption": "Maximum files",
-      "editor": "DynamicValue",
-      "value": "number",
-      "default_val": 1,
-      "optional": true,
-      "rank": 4
-    },
     "ABA": {
       "name": "max_file_size",
       "caption": "Maximum file size (bytes)",

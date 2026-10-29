@@ -16,15 +16,16 @@ const empty = () => ({
 function publish(instance: Instance, values: Record<string, unknown>) {
   for (const [name, value] of Object.entries(values)) instance.publishState(name, value)
 }
+function report(instance: Instance, error: unknown) {
+  instance.publishState('error_message', error instanceof Error ? error.message : String(error))
+  instance.triggerEvent('error')
+}
 export function fail(instance: Instance, error: unknown) {
   const alreadyFailed = instance.data.failed
   instance.data.failed = true
   instance.data.isUploading = false
-  publish(instance, {
-    is_uploading: false,
-    error_message: error instanceof Error ? error.message : String(error),
-  })
-  if (!alreadyFailed) instance.triggerEvent('error')
+  instance.publishState('is_uploading', false)
+  if (!alreadyFailed) report(instance, error)
 }
 function positive(value: number | undefined, fallback: number) {
   const number = value ?? fallback
@@ -48,6 +49,12 @@ function destroy(instance: Instance) {
   const uppy = instance.data.uppy
   instance.data.uppy = undefined
   instance.data.resizeObserver?.disconnect()
+  const dashboard = uppy?.getPlugin('Dashboard')
+  if (instance.data.mode === false && dashboard?.isModalOpen()) {
+    // destroy() alone leaves Dashboard's document keyboard listener behind.
+    dashboard.setOptions({ animateOpenClose: false })
+    void dashboard.closeModal()
+  }
   uppy?.destroy()
 }
 export function initialize(instance: Instance, _context: Context) {
@@ -63,6 +70,7 @@ export function initialize(instance: Instance, _context: Context) {
     destroy(instance)
     root.remove()
     instance.data.root = undefined
+    resetStates(instance)
   }
   instance.data.dispose = dispose
   instance.data.observer = new MutationObserver(() => {
@@ -74,7 +82,8 @@ export function update(instance: Instance, properties: Properties, context: Cont
   try {
     const types = properties.allowed_file_types?.split(/[\s,]+/).filter(Boolean)
     const restrictions = {
-      maxNumberOfFiles: positive(properties.max_files, 1),
+      // Preserve the original single-file contract: partial multi-file retries lose Assembly results.
+      maxNumberOfFiles: 1,
       maxFileSize: positive(properties.max_file_size, 5 * 1024 * 1024),
       allowedFileTypes: types?.length ? types : null,
     }
@@ -104,8 +113,21 @@ export function update(instance: Instance, properties: Properties, context: Cont
       instance.data.uppy = uppy
       instance.data.mode = inline
       const current = () => instance.data.uppy === uppy
+      const refreshMode = () =>
+        queueMicrotask(() => {
+          const latest = instance.data.properties ?? {}
+          if (
+            current() &&
+            !instance.data.isUploading &&
+            (latest.inline_dashboard !== false) !== inline
+          )
+            update(instance, latest, context)
+        })
       const failure = (error: unknown) => {
-        if (current()) fail(instance, error)
+        if (current()) {
+          fail(instance, error)
+          refreshMode()
+        }
       }
       if (typeof ResizeObserver !== 'undefined') {
         instance.data.resizeObserver = new ResizeObserver(() => {
@@ -154,6 +176,7 @@ export function update(instance: Instance, properties: Properties, context: Cont
           instance.data.isUploading = false
           publish(instance, { is_uploading: false, progress: 100, error_message: '' })
           instance.triggerEvent('completed')
+          refreshMode()
         }
       })
       uppy.on('error', failure)
@@ -161,8 +184,7 @@ export function update(instance: Instance, properties: Properties, context: Cont
       uppy.on('transloadit:assembly-error', (_assembly, error) => failure(error))
       uppy.on('restriction-failed', (_file, error) => {
         if (!current()) return
-        instance.publishState('error_message', error.message)
-        instance.triggerEvent('error')
+        report(instance, error)
       })
       uppy.on('cancel-all', () => {
         if (!current()) return
@@ -179,7 +201,8 @@ export function update(instance: Instance, properties: Properties, context: Cont
         button.textContent = properties.button_label || 'Upload files'
     }
   } catch (error) {
-    fail(instance, error)
+    if (instance.data.isUploading) report(instance, error)
+    else fail(instance, error)
   }
 }
 function resetStates(instance: Instance) {
@@ -216,7 +239,7 @@ export function open(properties: Properties, context: Context) {
           template_id: context.keys['TEMPLATE ID'],
         }),
       inline_dashboard: false,
-      max_file_size: Number(context.keys['MAX FILE SIZE']) || undefined,
+      max_file_size: Number.parseInt(context.keys['MAX FILE SIZE'] ?? '', 10) || undefined,
       allowed_file_types: context.keys['ALLOWED FILE TYPES'],
     },
     context,
