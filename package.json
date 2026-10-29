@@ -1,0 +1,41 @@
+{
+  "name": "transloadit-bubble-plugin",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Uppy and Transloadit for Bubble",
+  "repository": "transloadit/bubble-plugin",
+  "license": "MIT",
+  "packageManager": "yarn@4.12.0",
+  "engines": {
+    "node": ">=22.23.4"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "yarn lint && yarn test && yarn build && git diff --exit-code -- actions elements html_headers.html",
+    "lint": "biome check . && tsc --noEmit",
+    "fix": "biome check --write .",
+    "test": "vitest run --coverage",
+    "test:browser": "yarn build && playwright test",
+    "test:e2e": "yarn build && BUBBLE_REAL_API=1 playwright test",
+    "changeset": "changeset",
+    "changeset:version:release": "changeset version",
+    "release:prepare": "yarn check && node scripts/prepare-release.mjs"
+  },
+  "dependencies": {
+    "@uppy/core": "6.3.0",
+    "@uppy/dashboard": "6.0.2",
+    "@uppy/transloadit": "6.0.1"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.4.16",
+    "@changesets/cli": "^2.31.0",
+    "@playwright/test": "1.64.1",
+    "@types/node": "^22",
+    "@vitest/coverage-v8": "4.1.11",
+    "esbuild": "0.28.2",
+    "jsdom": "^28.1.0",
+    "typescript": "6.0.3",
+    "vitest": "4.1.11"
+  }
+}

@@ -1,5 +1,23 @@
 {
-    "category": "plugins",
-    "display": "open",
-    "type": "client_side"
+  "category": "plugins",
+  "display": "open",
+  "type": "client_side",
+  "fields": {
+    "ABM": {
+      "name": "params",
+      "caption": "Signed Assembly params (JSON)",
+      "editor": "DynamicValue",
+      "value": "text",
+      "optional": true,
+      "rank": 0
+    },
+    "ABN": {
+      "name": "signature",
+      "caption": "Signature (server-generated)",
+      "editor": "DynamicValue",
+      "value": "text",
+      "optional": true,
+      "rank": 1
+    }
+  }
 }

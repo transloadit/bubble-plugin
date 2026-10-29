@@ -1,41 +1,32 @@
 {
-    "assets": {
-        "AAG": {
-            "name": "robodogjs",
-            "url": "//dd7tel2830j4w.cloudfront.net/f1550425305140x505543046492519040/transloadit.min.js"
-        },
-        "AAH": {
-            "name": "robodogcss",
-            "url": "//dd7tel2830j4w.cloudfront.net/f1550425323424x127923606973563420/style.min.css"
-        }
+  "assets": {},
+  "dependencies": {
+    "use_jquery": false
+  },
+  "shared_keys": {
+    "AAR": {
+      "caption": "TEMPLATE ID",
+      "type": "client_safe"
     },
-    "dependencies": {
-        "use_jquery": false
+    "AAS": {
+      "caption": "AUTH KEY",
+      "type": "client_safe"
     },
-    "shared_keys": {
-        "AAR": {
-            "caption": "TEMPLATE ID",
-            "type": "client_safe"
-        },
-        "AAS": {
-            "caption": "AUTH KEY",
-            "type": "client_safe"
-        },
-        "AAl": {
-            "caption": "NOTIFY URL",
-            "type": "client_safe"
-        },
-        "AAr": {
-            "caption": "MAX FILE SIZE",
-            "type": "client_safe"
-        },
-        "AAs": {
-            "caption": "ALLOWED FILE TYPES",
-            "type": "client_safe"
-        },
-        "AAt": {
-            "caption": "ALLOWED SOURCES",
-            "type": "client_safe"
-        }
+    "AAl": {
+      "caption": "NOTIFY URL",
+      "type": "client_safe"
+    },
+    "AAr": {
+      "caption": "MAX FILE SIZE",
+      "type": "client_safe"
+    },
+    "AAs": {
+      "caption": "ALLOWED FILE TYPES",
+      "type": "client_safe"
+    },
+    "AAt": {
+      "caption": "ALLOWED SOURCES",
+      "type": "client_safe"
     }
+  }
 }

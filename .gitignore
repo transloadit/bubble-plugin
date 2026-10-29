@@ -1,0 +1,9 @@
+node_modules/
+.yarn/
+.env
+.env.*
+coverage/
+build/
+test-results/
+playwright-report/
+*.log
