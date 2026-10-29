@@ -20,14 +20,17 @@ jobs:
           node-version: '26.12.1'
       - run: npm install --global corepack@0.36.0 && corepack enable
       - run: corepack yarn install --immutable
-      - uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d
+      - id: changesets
+        uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d
         with:
           version: corepack yarn changeset:version:release
           commitMode: github-api
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - run: corepack yarn release:prepare
-      - uses: actions/upload-artifact@v7
+      - if: steps.changesets.outputs.hasChangesets == 'false'
+        run: corepack yarn release:prepare
+      - if: steps.changesets.outputs.hasChangesets == 'false'
+        uses: actions/upload-artifact@v7
         with:
           name: bubble-candidate-${{ github.sha }}
           path: build/bubble-plugin-*.zip*

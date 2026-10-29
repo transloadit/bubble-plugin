@@ -43,7 +43,7 @@ Add a user-facing Changeset with `corepack yarn changeset`. On main, Changesets 
 that updates `package.json` and `CHANGELOG.md`. Merge the version PR, then download that commit's
 `bubble-candidate-<sha>` artifact from **Release candidate** Actions. The archive and SHA-256 file
 contain only Bubble's export. Locally, `corepack yarn release:prepare` produces the same handoff.
-A candidate is built for every main commit; only use the version PR's commit for publication.
+Candidates are built on main only when no Changesets remain pending; use the version PR's commit for publication.
 Changesets versions are repository candidates; record Bubble's separately assigned published
 version in the release notes. There is deliberately no automatic Bubble deploy or user migration.
 

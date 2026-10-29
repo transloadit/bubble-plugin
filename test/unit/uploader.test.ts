@@ -292,7 +292,7 @@ describe('council regression cases', () => {
     client.emit('restriction-failed', null, new Error('Too many files'))
     expect(states.is_uploading).toBe(true)
     expect(states.error_message).toBe('Too many files')
-    client.emit('complete', { uploadID: 'upload-1', successful: [{}], failed: [] })
+    client.emit('transloadit:complete', { assembly_id: 'active', results: {} })
     expect(instance.triggerEvent).toHaveBeenLastCalledWith('completed')
   })
 
@@ -300,11 +300,80 @@ describe('council regression cases', () => {
     const client = clients[0]
     client.emit('upload', 'cancelled-upload')
     reset(instance)
-    client.emit('upload', 'next-upload')
+    const next = clients.at(-1)
+    next?.emit('upload', 'next-upload')
     client.emit('complete', { uploadID: 'cancelled-upload', successful: [], failed: [] })
     expect(states.is_uploading).toBe(true)
     expect(instance.triggerEvent).not.toHaveBeenCalledWith('completed')
-    client.emit('complete', { uploadID: 'next-upload', successful: [{}], failed: [] })
+    next?.emit('transloadit:complete', { assembly_id: 'next', results: {} })
     expect(instance.triggerEvent).toHaveBeenLastCalledWith('completed')
   })
+})
+
+describe('upload session isolation', () => {
+  beforeEach(() => {
+    initialize(instance, context)
+    update(instance, properties, context)
+  })
+
+  it('ignores late errors, progress and results from a cancelled session', () => {
+    const old = clients[0]
+    old.emit('upload', 'old-upload')
+    reset(instance)
+    const next = clients.at(-1)
+    next?.emit('upload', 'next-upload')
+    old.emit('error', new Error('All files were canceled after assembly was created'))
+    old.emit('progress', 100)
+    old.emit('transloadit:complete', { assembly_id: 'cancelled', results: {} })
+    expect(states.is_uploading).toBe(true)
+    expect(states.error_message).toBe('')
+    expect(states.progress).toBe(0)
+    expect(states.assembly_id).toBe('')
+  })
+
+  it('completes a successful per-file retry without a generic Uppy complete event', () => {
+    const client = clients[0]
+    client.emit('upload', 'failed-upload')
+    client.emit('error', new Error('Transfer failed'))
+    client.emit('upload', 'retry-upload')
+    client.emit('transloadit:complete', { assembly_id: 'retried', results: {} })
+    expect(states.is_uploading).toBe(false)
+    expect(states.progress).toBe(100)
+    expect(instance.triggerEvent).toHaveBeenLastCalledWith('completed')
+  })
+
+  it('allows a detached Bubble canvas to be attached and updated again', async () => {
+    const canvas = '0' in instance.canvas ? instance.canvas[0] : instance.canvas
+    canvas.remove()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    document.body.appendChild(canvas)
+    update(instance, properties, context)
+    expect(instance.data.root?.isConnected).toBe(true)
+  })
+})
+
+describe('legacy background upload', () => {
+  it('keeps a dismissed upload alive until it sends its notification', async () => {
+    const fetch = vi.fn().mockResolvedValue({ ok: true })
+    vi.stubGlobal('fetch', fetch)
+    open(properties, { ...context, keys: { 'NOTIFY URL': 'https://example.com/hook' } })
+    const client = clients[0]
+    client.emit('upload', 'legacy-upload')
+    client.emit('dashboard:modal-closed')
+    expect(client.destroyed).toBe(false)
+    client.emit('transloadit:complete', { assembly_id: 'finished', results: {} })
+    expect(fetch).toHaveBeenCalledOnce()
+    expect(client.destroyed).toBe(true)
+    vi.unstubAllGlobals()
+  })
+})
+
+it('does not notify from a cancelled legacy picker', () => {
+  const fetch = vi.fn().mockResolvedValue({ ok: true })
+  vi.stubGlobal('fetch', fetch)
+  open(properties, { ...context, keys: { 'NOTIFY URL': 'https://example.com/hook' } })
+  clients[0].emit('cancel-all')
+  clients[0].emit('transloadit:complete', { assembly_id: 'cancelled', results: {} })
+  expect(fetch).not.toHaveBeenCalled()
+  vi.unstubAllGlobals()
 })

@@ -67,6 +67,10 @@ test('opens and closes the button Dashboard', async ({ page }) => {
   })
   await page.getByRole('button', { name: 'Choose files', exact: true }).click()
   await expect(page.getByRole('button', { name: 'browse files' })).toBeVisible()
+  await page.evaluate(() => window.resetElement(window.instance, window.context))
+  await expect(page.getByRole('button', { name: 'Choose files', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Choose files', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'browse files' })).toBeVisible()
   await page.getByRole('button', { name: 'Close Modal' }).click()
   await expect(page.getByRole('button', { name: 'browse files' })).toBeHidden()
 })
@@ -116,6 +120,20 @@ test('uploads a real file and exposes real processed results from the built Bubb
   const download = await request.get(result.url)
   expect(download.ok()).toBe(true)
   expect((await download.body()).length).toBeGreaterThan(0)
+  await page.evaluate(async () => {
+    window.resetElement(window.instance, window.context)
+    const options = await fetch('/options').then((response) => response.json())
+    window.updateElement(window.instance, { ...options, inline_dashboard: true }, window.context)
+  })
+  await page.locator('input[type=file]').first().setInputFiles('test/fixtures/upload.png')
+  await page.getByRole('button', { name: /Upload 1 file/ }).click()
+  await expect
+    .poll(
+      () => page.evaluate(() => window.events.filter((event) => event === 'completed').length),
+      { timeout: 100_000 },
+    )
+    .toBe(2)
+  expect(await page.evaluate(() => window.states.result_urls.length)).toBe(1)
 })
 
 test('updates only the launcher label and preserves the modal close button', async ({ page }) => {

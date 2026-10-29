@@ -44,27 +44,33 @@ export function assemblyOptions(properties: Properties, signed = true) {
   // Do not reserialize: signatures authenticate the exact bytes supplied by the server.
   return { params, signature: properties.signature || undefined }
 }
+function destroy(instance: Instance) {
+  const uppy = instance.data.uppy
+  instance.data.uppy = undefined
+  instance.data.resizeObserver?.disconnect()
+  uppy?.destroy()
+}
 export function initialize(instance: Instance, _context: Context) {
   instance.data.dispose?.()
-  publish(instance, empty())
+  resetStates(instance)
   const canvas = '0' in instance.canvas ? instance.canvas[0] : instance.canvas
   const root = document.createElement('div')
   root.style.cssText = 'width:100%;height:100%;min-width:0'
   canvas.appendChild(root)
   instance.data.root = root
-  instance.data.dispose = () => {
+  const dispose = () => {
     instance.data.observer?.disconnect()
-    instance.data.resizeObserver?.disconnect()
-    instance.data.uppy?.destroy()
-    instance.data.uppy = undefined
+    destroy(instance)
     root.remove()
+    instance.data.root = undefined
   }
+  instance.data.dispose = dispose
   instance.data.observer = new MutationObserver(() => {
-    if (!root.isConnected) instance.data.dispose?.()
+    if (instance.data.root === root && !root.isConnected) dispose()
   })
   instance.data.observer.observe(document.body, { childList: true, subtree: true })
 }
-export function update(instance: Instance, properties: Properties, _context: Context) {
+export function update(instance: Instance, properties: Properties, context: Context) {
   try {
     const types = properties.allowed_file_types?.split(/[\s,]+/).filter(Boolean)
     const restrictions = {
@@ -72,15 +78,16 @@ export function update(instance: Instance, properties: Properties, _context: Con
       maxFileSize: positive(properties.max_file_size, 5 * 1024 * 1024),
       allowedFileTypes: types?.length ? types : null,
     }
+    if (!instance.data.root) initialize(instance, context)
     instance.data.properties = properties
     const inline = properties.inline_dashboard !== false
     if (!instance.data.uppy || (inline !== instance.data.mode && !instance.data.isUploading)) {
-      instance.data.resizeObserver?.disconnect()
-      instance.data.uppy?.destroy()
+      destroy(instance)
       const root = instance.data.root
       if (!root) throw new Error('Initialize the uploader before updating it')
       root.replaceChildren()
-      const uppy = new Uppy({ restrictions, autoProceed: false })
+      // Bubble states describe one Assembly cycle at a time.
+      const uppy = new Uppy({ restrictions, autoProceed: false, allowMultipleUploadBatches: false })
         .use(Transloadit, {
           waitForEncoding: true,
           errorReporting: false,
@@ -96,15 +103,17 @@ export function update(instance: Instance, properties: Properties, _context: Con
         )
       instance.data.uppy = uppy
       instance.data.mode = inline
+      const current = () => instance.data.uppy === uppy
+      const failure = (error: unknown) => {
+        if (current()) fail(instance, error)
+      }
       if (typeof ResizeObserver !== 'undefined') {
         instance.data.resizeObserver = new ResizeObserver(() => {
-          if (instance.data.mode)
+          if (current() && instance.data.mode)
             uppy.getPlugin('Dashboard')?.setOptions({ height: root.clientHeight || 350 })
         })
         instance.data.resizeObserver.observe(root)
       }
-      const active = new Set<string>()
-      const cancelled = new Set<string>()
       if (!inline) {
         const button = document.createElement('button')
         button.type = 'button'
@@ -115,18 +124,21 @@ export function update(instance: Instance, properties: Properties, _context: Con
         }
         root.appendChild(button)
       }
-      uppy.on('upload', (id) => {
-        active.add(id)
+      uppy.on('upload', () => {
+        if (!current()) return
         instance.data.failed = false
         instance.data.isUploading = true
         publish(instance, { ...empty(), is_uploading: true })
         instance.triggerEvent('upload_started')
       })
-      uppy.on('progress', (progress) => instance.publishState('progress', progress))
-      uppy.on('transloadit:assembly-created', (assembly) =>
-        instance.publishState('assembly_id', assembly.assembly_id),
-      )
+      uppy.on('progress', (progress) => {
+        if (current() && instance.data.isUploading) instance.publishState('progress', progress)
+      })
+      uppy.on('transloadit:assembly-created', (assembly) => {
+        if (current()) instance.publishState('assembly_id', assembly.assembly_id)
+      })
       uppy.on('transloadit:complete', (assembly) => {
+        if (!current()) return
         const results = assembly.results ?? {}
         const urls = Object.values(results)
           .flat()
@@ -137,29 +149,28 @@ export function update(instance: Instance, properties: Properties, _context: Con
           results_json: JSON.stringify(results),
           result_urls: urls,
         })
-      })
-      uppy.on('complete', (result) => {
-        const id = result.uploadID ?? ''
-        active.delete(id)
-        if (cancelled.delete(id)) return
-        instance.data.isUploading = false
-        instance.publishState('is_uploading', false)
-        if (!instance.data.failed && !result.failed?.length) {
-          instance.publishState('progress', 100)
+        // Uppy per-file retries omit the generic complete event; processing completion is authoritative.
+        if (!instance.data.failed && instance.data.isUploading) {
+          instance.data.isUploading = false
+          publish(instance, { is_uploading: false, progress: 100, error_message: '' })
           instance.triggerEvent('completed')
         }
       })
-      uppy.on('error', (error) => fail(instance, error))
-      uppy.on('upload-error', (_file, error) => fail(instance, error))
+      uppy.on('error', failure)
+      uppy.on('upload-error', (_file, error) => failure(error))
+      uppy.on('transloadit:assembly-error', (_assembly, error) => failure(error))
       uppy.on('restriction-failed', (_file, error) => {
+        if (!current()) return
         instance.publishState('error_message', error.message)
         instance.triggerEvent('error')
       })
-      uppy.on('transloadit:assembly-error', (_assembly, error) => fail(instance, error))
       uppy.on('cancel-all', () => {
-        for (const id of active) cancelled.add(id)
-        active.clear()
+        if (!current()) return
         resetStates(instance)
+        // A fresh client prevents pending requests from a cancelled Assembly affecting its successor.
+        destroy(instance)
+        if (instance.data.legacy === undefined)
+          update(instance, instance.data.properties ?? {}, context)
       })
     } else {
       instance.data.uppy.setOptions({ restrictions })
@@ -211,7 +222,10 @@ export function open(properties: Properties, context: Context) {
     context,
   )
   const uppy = instance.data.uppy
+  let disposed = false
   const dispose = () => {
+    if (disposed) return
+    disposed = true
     instance.data.dispose?.()
     canvas.remove()
   }
@@ -219,7 +233,10 @@ export function open(properties: Properties, context: Context) {
     dispose()
     return
   }
+  instance.data.root?.querySelector('button[data-transloadit-upload]')?.remove()
+  let closed = false
   uppy.on('transloadit:complete', (assembly) => {
+    if (disposed) return
     const url = context.keys['NOTIFY URL']
     if (url)
       void fetch(url, {
@@ -231,7 +248,15 @@ export function open(properties: Properties, context: Context) {
           if (!response.ok) throw new Error(`Notification failed: HTTP ${response.status}`)
         })
         .catch(() => context.reportDebugger('Transloadit notification failed'))
+    if (closed) dispose()
   })
-  uppy.on('dashboard:modal-closed', dispose)
+  uppy.on('dashboard:modal-closed', () => {
+    closed = true
+    if (!instance.data.isUploading) dispose()
+  })
+  uppy.on('cancel-all', dispose)
+  uppy.on('error', () => {
+    if (closed) dispose()
+  })
   void uppy.getPlugin('Dashboard')?.openModal()
 }

@@ -20,7 +20,8 @@ verified after publication before linking builders to it.
 4. On **Encoding completed**, read **Result URLs** (a list of texts), **Results JSON**, or
    **Assembly JSON**. Other states: **Assembly ID**, **Is uploading**, **Upload progress** (0–100,
    transfer progress; processing may continue), and **Error message**. **Upload started** and
-   **Upload error** events allow loading and failure workflows. Bubble's reset resets the uploader.
+   **Upload error** events allow loading and failure workflows. Use Done or Bubble's reset before
+   the next batch; one batch owns the result states at a time.
 
 The `params` string supports a Template ID:
 
