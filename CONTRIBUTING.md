@@ -90,5 +90,8 @@ TypeScript, Vitest, tests of the actual built artifact, Changesets, PR CI and we
 We preserve legacy IDs like Zapier preserves saved Zap contracts. Bubble has no Zapier-style CLI
 upload/promote/migrate, so releases produce an export and explicit human handoff. The official CDN
 keeps the export small; a future custom bundle can reduce unused Uppy plugins if download size matters.
+Uppy's `errorReporting: false` only disables request-level reports in the pinned version. Its
+plugin error handler still sends messages, browser user agent and client identification to
+`transloaditstatus.com/client_error`, including validation failures; this is not a telemetry opt-out.
 Uploads retain the original one-file limit. Multi-file batches need separate result aggregation and
 partial-retry handling; exposing a larger limit before those exist can silently lose processed results.

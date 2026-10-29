@@ -297,12 +297,18 @@ for (const phase of ['transfer', 'processing']) {
       }
       client.submitError = async () => {}
       client.cancelAssembly = async () => {}
-      client.getAssemblyStatus = async (url) => ({
-        assembly_id: `fixture-${url.split('/').at(-1)}`,
-        ok: 'ASSEMBLY_COMPLETED',
-        uploads: [],
-        results: {},
-      })
+      window.finalRequests = []
+      client.getAssemblyStatus = (url) =>
+        new Promise((resolve) => {
+          window.finalRequests.push(() =>
+            resolve({
+              assembly_id: `fixture-${url.split('/').at(-1)}`,
+              ok: 'ASSEMBLY_COMPLETED',
+              uploads: [],
+              results: {},
+            }),
+          )
+        })
     })
     await page.locator('input[type=file]').first().setInputFiles('test/fixtures/upload.png')
     await page.getByRole('button', { name: /Upload 1 file/ }).click()
@@ -335,9 +341,40 @@ for (const phase of ['transfer', 'processing']) {
     )
     expect(await page.evaluate(() => window.states.is_uploading)).toBe(true)
     expect(await page.evaluate(() => window.states.error_message)).toBe('')
-    await page.evaluate(() => window.sources[1].listeners.message({ data: 'assembly_finished' }))
+    await page.evaluate(() => {
+      // Polling and SSE can independently request the same final status.
+      window.sources[1].listeners.message({ data: 'assembly_finished' })
+      window.sources[1].listeners.message({ data: 'assembly_finished' })
+      window.finalRequests[0]()
+    })
     await expect.poll(() => page.evaluate(() => window.events.includes('completed'))).toBe(true)
     expect(await page.evaluate(() => window.states.assembly_id)).toBe('fixture-2')
+    const client = await page.evaluateHandle(() => window.instance.data.uppy)
+    await page.getByRole('button', { name: 'Done', exact: true }).click()
+    await page.locator('input[type=file]').first().setInputFiles('test/fixtures/upload.png')
+    await page.getByRole('button', { name: /Upload 1 file/ }).click()
+    await expect.poll(() => requests.includes('POST /tus/3/')).toBe(true)
+    expect(await page.evaluate((previous) => window.instance.data.uppy === previous, client)).toBe(
+      true,
+    )
+    await page.evaluate(() => window.finalRequests[1]())
+    expect(await page.evaluate(() => window.states.is_uploading)).toBe(true)
+    expect(await page.evaluate(() => window.states.assembly_id)).toBe('fixture-3')
+    expect(await page.evaluate(() => window.states.assembly_json)).toBe('')
+    expect(
+      await page.evaluate(() => window.events.filter((event) => event === 'completed').length),
+    ).toBe(1)
+    await page.evaluate(() => {
+      window.sources[2].listeners.message({ data: 'assembly_finished' })
+      window.finalRequests[2]()
+    })
+    await expect
+      .poll(() =>
+        page.evaluate(() => window.events.filter((event) => event === 'completed').length),
+      )
+      .toBe(2)
+    expect(await page.evaluate(() => window.states.assembly_id)).toBe('fixture-3')
+    await client.dispose()
     await page.evaluate(() => window.resetElement(window.instance, window.context))
   })
 }

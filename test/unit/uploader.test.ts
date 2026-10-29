@@ -211,6 +211,7 @@ describe('upload states and failures', () => {
     update(instance, { ...properties, inline_dashboard: false }, context)
     expect(clients).toHaveLength(1)
     expect(clients[0].destroyed).toBe(false)
+    clients[0].emit('transloadit:assembly-created', { assembly_id: 'finished' })
     clients[0].emit('transloadit:complete', { assembly_id: 'finished', results: {} })
     await Promise.resolve()
     expect(instance.data.root?.querySelector('button')?.textContent).toBe('Upload files')
@@ -222,6 +223,7 @@ describe('upload states and failures', () => {
     expect(states.error_message).toContain('positive integers')
     expect(states.is_uploading).toBe(true)
     update(instance, properties, context)
+    clients[0].emit('transloadit:assembly-created', { assembly_id: 'finished' })
     clients[0].emit('transloadit:complete', { assembly_id: 'finished', results: {} })
     expect(instance.triggerEvent).toHaveBeenLastCalledWith('completed')
   })
@@ -276,6 +278,7 @@ describe('upload states and failures', () => {
   it('finishes active processing without hiding an outstanding property error', () => {
     clients[0].emit('upload', 'active-upload')
     update(instance, { ...properties, max_file_size: -1 }, context)
+    clients[0].emit('transloadit:assembly-created', { assembly_id: 'finished' })
     clients[0].emit('transloadit:complete', { assembly_id: 'finished', results: {} })
     expect(instance.triggerEvent).toHaveBeenLastCalledWith('completed')
     expect(states.error_message).toContain('positive integers')
@@ -336,6 +339,7 @@ describe('legacy open action', () => {
     const fetch = vi.fn().mockResolvedValue({ ok: false, status: 500 })
     vi.stubGlobal('fetch', fetch)
     open(properties, { ...context, keys: { 'NOTIFY URL': 'https://example.com/hook' } })
+    clients[0].emit('transloadit:assembly-created', { assembly_id: 'a' })
     clients[0].emit('transloadit:complete', { assembly_id: 'a' })
     await vi.waitFor(() =>
       expect(context.reportDebugger).toHaveBeenCalledWith('Transloadit notification failed'),
@@ -380,6 +384,7 @@ describe('council regression cases', () => {
     client.emit('restriction-failed', null, new Error('Too many files'))
     expect(states.is_uploading).toBe(true)
     expect(states.error_message).toBe('Too many files')
+    client.emit('transloadit:assembly-created', { assembly_id: 'active' })
     client.emit('transloadit:complete', { assembly_id: 'active', results: {} })
     expect(instance.triggerEvent).toHaveBeenLastCalledWith('completed')
   })
@@ -393,6 +398,7 @@ describe('council regression cases', () => {
     client.emit('complete', { uploadID: 'cancelled-upload', successful: [], failed: [] })
     expect(states.is_uploading).toBe(true)
     expect(instance.triggerEvent).not.toHaveBeenCalledWith('completed')
+    next?.emit('transloadit:assembly-created', { assembly_id: 'next' })
     next?.emit('transloadit:complete', { assembly_id: 'next', results: {} })
     expect(instance.triggerEvent).toHaveBeenLastCalledWith('completed')
   })
@@ -424,6 +430,7 @@ describe('upload session isolation', () => {
     client.emit('upload', 'failed-upload')
     client.emit('error', new Error('Transfer failed'))
     client.emit('upload', 'retry-upload')
+    client.emit('transloadit:assembly-created', { assembly_id: 'retried' })
     client.emit('transloadit:complete', { assembly_id: 'retried', results: {} })
     expect(states.is_uploading).toBe(false)
     expect(states.progress).toBe(100)
@@ -442,6 +449,24 @@ describe('upload session isolation', () => {
     expect(states.is_uploading).toBe(true)
     expect(instance.triggerEvent).not.toHaveBeenCalledWith('completed')
     client.emit('transloadit:complete', { assembly_id: 'retry', results: {} })
+    expect(instance.triggerEvent).toHaveBeenLastCalledWith('completed')
+  })
+
+  it.each([false, true])('ignores superseded successful completions (created=%s)', (created) => {
+    const client = clients[0]
+    client.emit('upload', 'first-upload')
+    client.emit('transloadit:assembly-created', { assembly_id: 'first' })
+    const first = { assembly_id: 'first', results: {} }
+    client.emit('transloadit:complete', first)
+    instance.triggerEvent = vi.fn()
+    client.emit('upload', 'second-upload')
+    if (created) client.emit('transloadit:assembly-created', { assembly_id: 'second' })
+    client.emit('transloadit:complete', first)
+    expect(states.is_uploading).toBe(true)
+    expect(states.assembly_json).toBe('')
+    expect(instance.triggerEvent).not.toHaveBeenCalledWith('completed')
+    if (!created) client.emit('transloadit:assembly-created', { assembly_id: 'second' })
+    client.emit('transloadit:complete', { assembly_id: 'second', results: {} })
     expect(instance.triggerEvent).toHaveBeenLastCalledWith('completed')
   })
 
@@ -539,6 +564,7 @@ describe('legacy background upload', () => {
     client.emit('upload', 'legacy-upload')
     client.emit('dashboard:modal-closed')
     expect(client.destroyed).toBe(false)
+    client.emit('transloadit:assembly-created', { assembly_id: 'finished' })
     client.emit('transloadit:complete', { assembly_id: 'finished', results: {} })
     expect(fetch).toHaveBeenCalledOnce()
     expect(client.destroyed).toBe(true)

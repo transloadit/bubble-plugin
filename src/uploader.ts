@@ -107,6 +107,7 @@ export function update(instance: Instance, properties: Properties, context: Cont
       const uppy = new Uppy({ restrictions, autoProceed: false, allowMultipleUploadBatches: false })
         .use(Transloadit, {
           waitForEncoding: true,
+          // This only disables request-level reports; Uppy still submits plugin error events.
           errorReporting: false,
           clientName: 'bubble-plugin',
           assemblyOptions: () => {
@@ -218,8 +219,13 @@ export function update(instance: Instance, properties: Properties, context: Cont
         instance.publishState('assembly_id', assembly.assembly_id)
       })
       uppy.on('transloadit:complete', (assembly) => {
-        // A failed Assembly's final status request can resolve after its retry has started.
-        if (!current() || failedAssemblies.has(assembly.assembly_id ?? '')) return
+        // Duplicate final requests from any previous cycle can resolve during the next upload.
+        if (
+          !current() ||
+          assembly.assembly_id !== instance.data.assemblyId ||
+          failedAssemblies.has(assembly.assembly_id ?? '')
+        )
+          return
         const results = assembly.results ?? {}
         const urls = Object.values(results)
           .flat()
@@ -334,7 +340,12 @@ export function open(properties: Properties, context: Context) {
   instance.data.root?.querySelector('button[data-transloadit-upload]')?.remove()
   let closed = false
   uppy.on('transloadit:complete', (assembly) => {
-    if (disposed || instance.data.failedAssemblies?.has(assembly.assembly_id ?? '')) return
+    if (
+      disposed ||
+      assembly.assembly_id !== instance.data.assemblyId ||
+      instance.data.failedAssemblies?.has(assembly.assembly_id ?? '')
+    )
+      return
     const url = context.keys['NOTIFY URL']
     if (url)
       void fetch(url, {
