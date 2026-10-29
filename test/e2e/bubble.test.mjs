@@ -42,6 +42,13 @@ for (const width of [1280, 390]) {
       await window.mount({ inline_dashboard: true })
     })
     await expect(page.getByRole('button', { name: 'browse files' })).toBeVisible()
+    expect((await page.locator('.uppy-Dashboard-inner').boundingBox()).height).toBeGreaterThan(350)
+    await page.evaluate(() => {
+      window.instance.canvas[0].style.height = '500px'
+    })
+    await expect
+      .poll(async () => (await page.locator('.uppy-Dashboard-inner').boundingBox()).height)
+      .toBe(500)
     await page.locator('input[type=file]').first().setInputFiles('test/fixtures/upload.png')
     await expect(page.getByText('upload.png', { exact: true })).toBeVisible()
     await page.evaluate(() => {

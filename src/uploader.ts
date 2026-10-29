@@ -53,6 +53,7 @@ export function initialize(instance: Instance, _context: Context) {
   instance.data.root = root
   instance.data.dispose = () => {
     instance.data.observer?.disconnect()
+    instance.data.resizeObserver?.disconnect()
     instance.data.uppy?.destroy()
     instance.data.uppy = undefined
     root.remove()
@@ -72,6 +73,7 @@ export function update(instance: Instance, properties: Properties, _context: Con
     instance.data.properties = properties
     const inline = properties.inline_dashboard !== false
     if (!instance.data.uppy || (inline !== instance.data.mode && !instance.data.isUploading)) {
+      instance.data.resizeObserver?.disconnect()
       instance.data.uppy?.destroy()
       const root = instance.data.root
       if (!root) throw new Error('Initialize the uploader before updating it')
@@ -87,11 +89,18 @@ export function update(instance: Instance, properties: Properties, _context: Con
         .use(
           Dashboard,
           inline
-            ? { target: root, inline: true, width: '100%', height: '100%' }
+            ? { target: root, inline: true, width: '100%', height: root.clientHeight || 350 }
             : { target: root, inline: false, closeAfterFinish: true },
         )
       instance.data.uppy = uppy
       instance.data.mode = inline
+      if (typeof ResizeObserver !== 'undefined') {
+        instance.data.resizeObserver = new ResizeObserver(() => {
+          if (instance.data.mode)
+            uppy.getPlugin('Dashboard')?.setOptions({ height: root.clientHeight || 350 })
+        })
+        instance.data.resizeObserver.observe(root)
+      }
       if (!inline) {
         const button = document.createElement('button')
         button.type = 'button'

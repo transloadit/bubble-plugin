@@ -1,4 +1,3 @@
-import { execFileSync } from 'node:child_process'
 import { createHmac } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
@@ -32,17 +31,6 @@ export async function startHarness() {
       } else if (/^\/elements\/AAu\/(initialize|update|reset)\.js$/.test(path)) {
         response.setHeader('Content-Type', 'text/plain')
         response.end(await readFile(`.${path}`, 'utf8'))
-      } else if (path === '/before') {
-        const baseline = execFileSync('git', ['show', 'origin/main:html_headers.html'], {
-          encoding: 'utf8',
-        })
-        const action = execFileSync('git', ['show', 'origin/main:actions/AAF/client.js'], {
-          encoding: 'utf8',
-        })
-        response.setHeader('Content-Type', 'text/html')
-        response.end(`<!doctype html><html><head>${baseline}</head><body><button id="legacy">Upload files</button><script>
-        document.querySelector('#legacy').onclick = () => (${action})({}, {keys: {}});
-        </script></body></html>`)
       } else if (path === '/') {
         response.setHeader('Content-Type', 'text/html')
         response.end(`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">${headers}</head>

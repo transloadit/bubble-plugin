@@ -20,6 +20,7 @@ export interface Instance {
     properties?: Properties
     root?: HTMLElement
     observer?: MutationObserver
+    resizeObserver?: ResizeObserver
     dispose?: () => void
     mode?: boolean
     isUploading?: boolean
