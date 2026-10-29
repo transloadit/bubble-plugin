@@ -42,6 +42,7 @@ function positive(value: number | undefined, fallback: number) {
 }
 export function assemblyOptions(properties: Properties, signed = true) {
   const params = properties.params ?? ''
+  if (!params.trim()) throw new Error('Provide signed Assembly params JSON before uploading')
   const parsed = JSON.parse(params)
   if (!parsed?.auth?.key || !(parsed.template_id || parsed.steps)) {
     throw new Error('Assembly params need auth.key and template_id or steps')
@@ -339,13 +340,19 @@ export function open(properties: Properties, context: Context) {
   }
   instance.data.root?.querySelector('button[data-transloadit-upload]')?.remove()
   let closed = false
+  const notifiedAssemblies = new Set<string>()
   uppy.on('transloadit:complete', (assembly) => {
+    const id = assembly.assembly_id
     if (
       disposed ||
-      assembly.assembly_id !== instance.data.assemblyId ||
-      instance.data.failedAssemblies?.has(assembly.assembly_id ?? '')
+      !id ||
+      id !== instance.data.assemblyId ||
+      instance.data.failedAssemblies?.has(id) ||
+      notifiedAssemblies.has(id)
     )
       return
+    // Per-file retries can leave the modal open while duplicate final-status requests resolve.
+    notifiedAssemblies.add(id)
     const url = context.keys['NOTIFY URL']
     if (url)
       void fetch(url, {

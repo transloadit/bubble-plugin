@@ -1,7 +1,7 @@
 import type Uppy from '@uppy/core'
 
 export interface Properties {
-  params?: string
+  params?: string | null
   signature?: string
   inline_dashboard?: boolean
   button_label?: string

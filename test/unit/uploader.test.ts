@@ -292,6 +292,9 @@ describe('upload states and failures', () => {
 })
 
 describe('signing contract', () => {
+  it.each([undefined, null, '', '  '])('names missing Assembly params (%j)', (params) => {
+    expect(() => assemblyOptions({ params })).toThrow('Provide signed Assembly params JSON')
+  })
   it('accepts signed Assembly Instructions', () => {
     const params = JSON.stringify({
       auth: { key: 'key', expires: 'later' },
@@ -503,6 +506,23 @@ describe('upload session isolation', () => {
 })
 
 describe('legacy background upload', () => {
+  it('notifies only once for duplicate final-status responses after a retry', () => {
+    const fetch = vi.fn().mockResolvedValue({ ok: true })
+    vi.stubGlobal('fetch', fetch)
+    open(properties, { ...context, keys: { 'NOTIFY URL': 'https://example.com/hook' } })
+    const client = clients[0]
+    client.emit('upload', 'first-upload')
+    client.emit('transloadit:assembly-created', { assembly_id: 'first' })
+    client.emit('error', new Error('Transfer failed'))
+    client.emit('upload', 'retry-upload')
+    client.emit('transloadit:assembly-created', { assembly_id: 'retry' })
+    const result = { assembly_id: 'retry', results: {} }
+    client.emit('transloadit:complete', result)
+    client.emit('transloadit:complete', result)
+    expect(fetch).toHaveBeenCalledOnce()
+    client.emit('dashboard:modal-closed')
+    vi.unstubAllGlobals()
+  })
   it('keeps a dismissed retry alive when the previous Assembly errors late', () => {
     const fetch = vi.fn().mockResolvedValue({ ok: true })
     vi.stubGlobal('fetch', fetch)
