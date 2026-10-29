@@ -23,9 +23,10 @@ test.beforeEach(async ({ page }) => {
   page.on('console', (message) => {
     if (message.type() === 'error') issues.push(message.text())
   })
-  page.on('requestfailed', (request) =>
-    issues.push(`Failed request: ${new URL(request.url()).origin}`),
-  )
+  page.on('requestfailed', (request) => {
+    const url = new URL(request.url())
+    issues.push(`Failed request: ${url.protocol} ${url.origin} (${request.failure()?.errorText})`)
+  })
   await page.goto(harness.url)
 })
 test.afterEach(async ({ page }) => {
@@ -210,6 +211,15 @@ for (const restrictions of [{ max_file_size: 1 }, { allowed_file_types: '.bin' }
   }) => {
     await page.evaluate(async () => window.mount({ inline_dashboard: true }))
     await page.locator('input[type=file]').first().setInputFiles('test/fixtures/upload.png')
+    // Wait for selection to finish loading its preview before changing the file's restrictions.
+    await expect(page.locator('.uppy-Dashboard-Item-previewImg')).toBeVisible()
+    await expect
+      .poll(() =>
+        page
+          .locator('.uppy-Dashboard-Item-previewImg')
+          .evaluate((image) => image.complete && image.naturalWidth > 0),
+      )
+      .toBe(true)
     await page.evaluate((restrictions) => {
       window.updateElement(
         window.instance,
