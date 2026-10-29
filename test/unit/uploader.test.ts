@@ -269,6 +269,8 @@ describe('upload states and failures', () => {
     expect(instance.triggerEvent).toHaveBeenCalledExactlyOnceWith('error')
     reset(instance)
     expect(states.error_message).toContain('positive integers')
+    reset(instance)
+    expect(states.error_message).toContain('positive integers')
   })
 
   it('finishes active processing without hiding an outstanding property error', () => {
@@ -439,6 +441,20 @@ describe('upload session isolation', () => {
 })
 
 describe('legacy background upload', () => {
+  it.each([
+    'error',
+    'upload-error',
+    'transloadit:assembly-error',
+  ])('releases a dismissed picker on %s', (event) => {
+    open(properties, context)
+    const client = clients[0]
+    client.emit('upload', 'legacy-upload')
+    client.emit('dashboard:modal-closed')
+    const error = new Error('Upload failed')
+    client.emit(event, ...(event === 'error' ? [error] : [null, error]))
+    expect(client.destroyed).toBe(true)
+  })
+
   it('keeps a dismissed upload alive until it sends its notification', async () => {
     const fetch = vi.fn().mockResolvedValue({ ok: true })
     vi.stubGlobal('fetch', fetch)
@@ -452,6 +468,16 @@ describe('legacy background upload', () => {
     expect(client.destroyed).toBe(true)
     vi.unstubAllGlobals()
   })
+})
+
+it('preserves initial configuration errors across resets before Uppy exists', () => {
+  initialize(instance, context)
+  update(instance, { ...properties, max_file_size: 0 }, context)
+  expect(clients).toHaveLength(0)
+  reset(instance)
+  reset(instance)
+  expect(states.error_message).toContain('positive integers')
+  expect(instance.triggerEvent).toHaveBeenCalledExactlyOnceWith('error')
 })
 
 it('does not notify from a cancelled legacy picker', () => {

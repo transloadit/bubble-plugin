@@ -109,6 +109,10 @@ export function update(instance: Instance, properties: Properties, context: Cont
             try {
               if (instance.data.configurationError)
                 throw new Error(instance.data.configurationError)
+              for (const file of uppy.getFiles()) {
+                const error = uppy.validateSingleFile(file)
+                if (error) throw new Error(error)
+              }
               return assemblyOptions(instance.data.properties ?? {}, !instance.data.legacy)
             } catch (error) {
               // Uppy retryUpload/retryAll reject without emitting a preprocessor error event.
@@ -179,8 +183,15 @@ export function update(instance: Instance, properties: Properties, context: Cont
       uppy.on('progress', (progress) => {
         if (current() && instance.data.isUploading) instance.publishState('progress', progress)
       })
-      uppy.on('transloadit:assembly-created', (assembly) => {
-        if (current()) instance.publishState('assembly_id', assembly.assembly_id)
+      uppy.on('transloadit:assembly-created', (assembly, fileIDs = []) => {
+        if (!current()) return
+        // A replacement Assembly needs a new tus resource, not the previous Assembly's upload URL.
+        for (const id of fileIDs) {
+          const file = uppy.getFile(id)
+          if (file?.tus?.uploadUrl)
+            uppy.setFileState(id, { tus: { ...file.tus, uploadUrl: undefined } })
+        }
+        instance.publishState('assembly_id', assembly.assembly_id)
       })
       uppy.on('transloadit:complete', (assembly) => {
         if (!current()) return
@@ -238,15 +249,16 @@ export function update(instance: Instance, properties: Properties, context: Cont
     report(instance, error, true)
   }
 }
-function resetStates(instance: Instance) {
+function resetStates(instance: Instance, configurationError?: string) {
   instance.data.isUploading = false
   instance.data.failed = false
-  instance.data.configurationError = undefined
-  instance.data.errorIsConfiguration = false
-  publish(instance, empty())
+  instance.data.configurationError = configurationError
+  instance.data.errorIsConfiguration = !!configurationError
+  publish(instance, { ...empty(), error_message: configurationError ?? '' })
 }
 export function reset(instance: Instance) {
-  resetStates(instance)
+  // Without a client, cancel-all cannot revalidate an unresolved property error.
+  resetStates(instance, instance.data.uppy ? undefined : instance.data.configurationError)
   instance.data.uppy?.cancelAll()
 }
 export function open(properties: Properties, context: Context) {
@@ -313,8 +325,9 @@ export function open(properties: Properties, context: Context) {
     if (!instance.data.isUploading) dispose()
   })
   uppy.on('cancel-all', dispose)
-  uppy.on('error', () => {
-    if (closed) dispose()
-  })
+  for (const event of ['error', 'upload-error', 'transloadit:assembly-error'] as const)
+    uppy.on(event, () => {
+      if (closed) dispose()
+    })
   void uppy.getPlugin('Dashboard')?.openModal()
 }
