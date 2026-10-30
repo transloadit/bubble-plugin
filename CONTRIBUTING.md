@@ -6,6 +6,10 @@ Bubble remains the primary plugin store. Keep `actions/`, `elements/`, `api/`,
 `html_headers.html`, `meta_data.json` and `shared_tech_params.json` in their export layout;
 never rename existing opaque IDs. New element `AAu` coexists with legacy `AAp`.
 
+Handwritten code lives in TypeScript: `src/`, `scripts/`, `test/` and the root test configs.
+Node runs scripts with native type stripping; `tsc --noEmit` checks them all. Bubble callbacks
+remain generated JavaScript for editor sync; the legacy `AAp` export stays unchanged.
+
 Edit TypeScript in `src/`, then run `corepack yarn build` and commit the generated callbacks and
 header. The header loads the pinned official Uppy 6.0.5 ESM/CSS CDN bundle, whose core 6.3.0,
 Dashboard 6.0.2 and Transloadit 6.0.1 match the typed npm dependencies. Upgrade these together;

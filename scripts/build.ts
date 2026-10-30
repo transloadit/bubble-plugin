@@ -5,12 +5,14 @@ import { build } from 'esbuild'
 // Uppy 6.0.5 ships the exact core/dashboard/transloadit versions in package.json.
 // The versioned Transloadit CDN is a trusted runtime dependency; keep its pin and typed API in sync.
 const cdn = 'https://releases.transloadit.com/uppy/v6.0.5/uppy.min'
-const modules = {
+const modules: Record<string, [string, string]> = {
   '@uppy/core': ['Uppy', '6.3.0'],
   '@uppy/dashboard': ['Dashboard', '6.0.2'],
   '@uppy/transloadit': ['Transloadit', '6.0.1'],
 }
-const { dependencies } = JSON.parse(await readFile('package.json', 'utf8'))
+const { dependencies }: { dependencies: Record<string, string> } = JSON.parse(
+  await readFile('package.json', 'utf8'),
+)
 for (const [name, [, version]] of Object.entries(modules)) {
   if (dependencies[name] !== version)
     throw new Error(`Update the official Uppy CDN release alongside ${name}`)

@@ -2,7 +2,7 @@ import Uppy from '@uppy/core'
 import Dashboard from '@uppy/dashboard'
 import Transloadit, { type AssemblyResponse } from '@uppy/transloadit'
 
-import type { Context, Instance, Properties } from './types'
+import type { Context, Instance, Properties } from './types.ts'
 
 const empty = () => ({
   is_uploading: false,

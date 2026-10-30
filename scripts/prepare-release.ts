@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 
-const { version } = JSON.parse(await readFile('package.json', 'utf8'))
+const { version }: { version: string } = JSON.parse(await readFile('package.json', 'utf8'))
 await mkdir('build', { recursive: true })
 const file = `build/bubble-plugin-${version}.zip`
 // CI artifacts include the commit SHA; this filename labels a candidate, not a published Bubble version.
@@ -17,8 +17,8 @@ const entries = [
 ]
 // Remove an earlier archive through unlink so zip cannot retain stale entries.
 const { unlink } = await import('node:fs/promises')
-await unlink(file).catch((error) => {
-  if (error.code !== 'ENOENT') throw error
+await unlink(file).catch((error: unknown) => {
+  if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error
 })
 execFileSync('zip', ['-qr', file, ...entries])
 const sha256 = createHash('sha256')

@@ -1,6 +1,6 @@
-import { expect, test } from '@playwright/test'
+import { expect, type Page, test } from '@playwright/test'
 
-import { startHarness } from './harness.mjs'
+import { startHarness } from './harness.ts'
 
 const real = process.env.BUBBLE_REAL_API === '1'
 if (real && (!process.env.TRANSLOADIT_KEY || !process.env.TRANSLOADIT_SECRET)) {
@@ -8,8 +8,8 @@ if (real && (!process.env.TRANSLOADIT_KEY || !process.env.TRANSLOADIT_SECRET)) {
     'Real API tests require TRANSLOADIT_KEY and TRANSLOADIT_SECRET (CI: BUBBLE_E2E_TRANSLOADIT_KEY and BUBBLE_E2E_TRANSLOADIT_SECRET)',
   )
 }
-let harness
-const errors = new WeakMap()
+let harness: Awaited<ReturnType<typeof startHarness>>
+const errors = new WeakMap<Page, string[]>()
 test.beforeAll(async () => {
   harness = await startHarness()
 })
@@ -17,7 +17,7 @@ test.afterAll(async () => {
   await harness?.close()
 })
 test.beforeEach(async ({ page }) => {
-  const issues = []
+  const issues: string[] = []
   errors.set(page, issues)
   page.on('pageerror', (error) => issues.push(error.message))
   page.on('console', (message) => {
@@ -43,12 +43,12 @@ for (const width of [1280, 390]) {
       await window.mount({ inline_dashboard: true })
     })
     await expect(page.getByRole('button', { name: 'browse files' })).toBeVisible()
-    expect((await page.locator('.uppy-Dashboard-inner').boundingBox()).height).toBeGreaterThan(350)
+    expect((await page.locator('.uppy-Dashboard-inner').boundingBox())?.height).toBeGreaterThan(350)
     await page.evaluate(() => {
       window.instance.canvas[0].style.height = '500px'
     })
     await expect
-      .poll(async () => (await page.locator('.uppy-Dashboard-inner').boundingBox()).height)
+      .poll(async () => (await page.locator('.uppy-Dashboard-inner').boundingBox())?.height)
       .toBe(500)
     await page.locator('input[type=file]').first().setInputFiles('test/fixtures/upload.png')
     await expect(page.getByText('upload.png', { exact: true })).toBeVisible()
@@ -121,7 +121,7 @@ test('reports invalid signing data when a failed file is retried', async ({ page
       window.context,
     )
     await Promise.resolve()
-    const uppy = window.instance.data.uppy
+    const uppy = window.getUppy()
     await uppy.retryUpload(uppy.getFiles()[0].id).catch(() => {})
   })
   expect(await page.evaluate(() => window.states.is_uploading)).toBe(false)
@@ -153,8 +153,11 @@ test('uploads a real file and exposes real processed results from the built Bubb
     1,
   )
   const result = await page.evaluate(() => {
-    const assembly = JSON.parse(window.states.assembly_json)
-    const file = JSON.parse(window.states.results_json).resize[0]
+    const assembly: { ok: string; uploads: unknown[] } = JSON.parse(window.states.assembly_json)
+    const results: { resize: { meta: { width: number; height: number } }[] } = JSON.parse(
+      window.states.results_json,
+    )
+    const file = results.resize[0]
     return {
       status: assembly.ok,
       count: assembly.uploads.length,
@@ -217,7 +220,10 @@ for (const restrictions of [{ max_file_size: 1 }, { allowed_file_types: '.bin' }
       .poll(() =>
         page
           .locator('.uppy-Dashboard-Item-previewImg')
-          .evaluate((image) => image.complete && image.naturalWidth > 0),
+          .evaluate(
+            (image) =>
+              image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0,
+          ),
       )
       .toBe(true)
     await page.evaluate((restrictions) => {
@@ -235,7 +241,7 @@ for (const restrictions of [{ max_file_size: 1 }, { allowed_file_types: '.bin' }
 
 for (const phase of ['transfer', 'processing']) {
   test(`starts a fresh tus upload after ${phase} failure`, async ({ page }) => {
-    const requests = []
+    const requests: string[] = []
     await page.route(`${harness.url}/assembly/**`, (route) =>
       route.fulfill({
         json: { assembly_id: 'fixture', ok: 'ASSEMBLY_UPLOADING', uploads: [], results: {} },
@@ -272,25 +278,34 @@ for (const phase of ['transfer', 'processing']) {
     await page.evaluate(async () => {
       // Drive the actual processing-error path without an external API, SSE connection or telemetry.
       window.sources = []
-      window.EventSource = class {
-        listeners = {}
-        constructor() {
-          window.sources.push(this)
-        }
-        addEventListener(name, callback) {
-          this.listeners[name] = callback
-        }
-        close() {}
-      }
+      Object.defineProperty(window, 'EventSource', {
+        configurable: true,
+        writable: true,
+        // The fixture implements only the SSE listener/close surface used by the pinned SDK.
+        value: class {
+          listeners: Record<string, (event: { data: string }) => void> = {}
+          constructor() {
+            window.sources.push(this)
+          }
+          addEventListener(name: string, callback: (event: { data: string }) => void) {
+            this.listeners[name] = callback
+          }
+          close() {}
+        },
+      })
       await window.mount({
         inline_dashboard: true,
         params: JSON.stringify({ auth: { key: 'test', expires: 'later' }, template_id: 'test' }),
         signature: 'test',
       })
-      const uppy = window.instance.data.uppy
+      const uppy = window.getUppy()
       uppy.setOptions({ logger: { debug() {}, warn() {}, error() {} } })
-      uppy.getPlugin('Tus').setOptions({ retryDelays: [] })
-      const client = uppy.getPlugin('Transloadit').client
+      const tus = uppy.getPlugin('Tus')
+      if (!tus) throw new Error('Missing Tus plugin')
+      tus.setOptions({ retryDelays: [] })
+      const transloadit = uppy.getPlugin('Transloadit')
+      if (!transloadit) throw new Error('Missing Transloadit plugin')
+      const client = transloadit.client
       let number = 0
       client.createAssembly = async () => {
         number += 1
@@ -305,7 +320,7 @@ for (const phase of ['transfer', 'processing']) {
           websocket_url: `${location.origin}/events`,
         }
       }
-      client.submitError = async () => {}
+      client.submitError = async () => ({ ok: 'ASSEMBLY_UPLOADING', assembly_id: 'fixture' })
       client.cancelAssembly = async () => {}
       window.finalRequests = []
       client.getAssemblyStatus = (url) =>
@@ -324,9 +339,7 @@ for (const phase of ['transfer', 'processing']) {
     await page.getByRole('button', { name: /Upload 1 file/ }).click()
     if (phase === 'processing') {
       await expect
-        .poll(() =>
-          page.evaluate(() => window.instance.data.uppy.getFiles()[0].progress.uploadComplete),
-        )
+        .poll(() => page.evaluate(() => window.getUppy().getFiles()[0].progress.uploadComplete))
         .toBe(true)
       await page.evaluate(() =>
         window.sources[0].listeners.assembly_error({
@@ -339,9 +352,7 @@ for (const phase of ['transfer', 'processing']) {
     await expect.poll(() => requests.includes('POST /tus/2/')).toBe(true)
     expect(requests).not.toContain('HEAD /tus/1/file')
     await expect
-      .poll(() =>
-        page.evaluate(() => window.instance.data.uppy.getFiles()[0].progress.uploadComplete),
-      )
+      .poll(() => page.evaluate(() => window.getUppy().getFiles()[0].progress.uploadComplete))
       .toBe(true)
     // An already pending status request can fail after its Assembly's connection was closed.
     await page.evaluate(() =>
@@ -359,14 +370,12 @@ for (const phase of ['transfer', 'processing']) {
     })
     await expect.poll(() => page.evaluate(() => window.events.includes('completed'))).toBe(true)
     expect(await page.evaluate(() => window.states.assembly_id)).toBe('fixture-2')
-    const client = await page.evaluateHandle(() => window.instance.data.uppy)
+    const client = await page.evaluateHandle(() => window.getUppy())
     await page.getByRole('button', { name: 'Done', exact: true }).click()
     await page.locator('input[type=file]').first().setInputFiles('test/fixtures/upload.png')
     await page.getByRole('button', { name: /Upload 1 file/ }).click()
     await expect.poll(() => requests.includes('POST /tus/3/')).toBe(true)
-    expect(await page.evaluate((previous) => window.instance.data.uppy === previous, client)).toBe(
-      true,
-    )
+    expect(await page.evaluate((previous) => window.getUppy() === previous, client)).toBe(true)
     await page.evaluate(() => window.finalRequests[1]())
     expect(await page.evaluate(() => window.states.is_uploading)).toBe(true)
     expect(await page.evaluate(() => window.states.assembly_id)).toBe('fixture-3')

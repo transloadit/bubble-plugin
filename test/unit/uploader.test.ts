@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { Context, Instance } from '../../src/types'
+import type { Context, Instance } from '../../src/types.ts'
 
-import { assemblyOptions, initialize, open, reset, update } from '../../src/uploader'
+import { assemblyOptions, initialize, open, reset, update } from '../../src/uploader.ts'
 
 const { clients, MockUppy } = vi.hoisted(() => {
   const clients: MockUppy[] = []
