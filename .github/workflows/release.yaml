@@ -1,0 +1,54 @@
+name: Release candidate
+on:
+  push:
+    branches: [main]
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      hasChangesets: ${{ steps.changesets.outputs.hasChangesets }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          # Changesets uses its own API token; installs do not need a write credential.
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '26.12.1'
+      - run: npm install --global corepack@0.36.0 && corepack enable
+      - run: corepack yarn install --immutable
+      - id: changesets
+        uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d
+        with:
+          version: corepack yarn changeset:version:release
+          commitMode: github-api
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  candidate:
+    needs: version
+    if: needs.version.outputs.hasChangesets == 'false'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '26.12.1'
+      - run: npm install --global corepack@0.36.0 && corepack enable
+      - run: corepack yarn install --immutable
+      # Changesets writes ~/.netrc. This separate runner keeps its token away from candidate checks.
+      - run: corepack yarn release:prepare
+      - uses: actions/upload-artifact@v7
+        with:
+          name: bubble-candidate-${{ github.sha }}
+          path: build/bubble-plugin-*.zip*

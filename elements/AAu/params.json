@@ -1,0 +1,123 @@
+{
+  "add_is_visible": true,
+  "category": "visual elements",
+  "default_dim": {
+    "height": 350,
+    "width": 459
+  },
+  "display": "Transloadit Uploader",
+  "icon": "ion-upload",
+  "support_autobinding": false,
+  "property_applications": {
+    "resizable": true,
+    "MinWidth": true
+  },
+  "fields": {
+    "AAv": {
+      "name": "params",
+      "caption": "Signed Assembly params (JSON)",
+      "editor": "DynamicValue",
+      "value": "text",
+      "default_val": "",
+      "optional": true,
+      "rank": 0
+    },
+    "AAw": {
+      "name": "signature",
+      "caption": "Signature (server-generated)",
+      "editor": "DynamicValue",
+      "value": "text",
+      "default_val": "",
+      "optional": true,
+      "rank": 1
+    },
+    "AAx": {
+      "name": "inline_dashboard",
+      "caption": "Inline Dashboard",
+      "editor": "DynamicValue",
+      "value": "boolean",
+      "default_val": true,
+      "optional": true,
+      "rank": 2
+    },
+    "AAy": {
+      "name": "button_label",
+      "caption": "Upload button label",
+      "editor": "DynamicValue",
+      "value": "text",
+      "default_val": "Upload files",
+      "optional": true,
+      "rank": 3
+    },
+    "ABA": {
+      "name": "max_file_size",
+      "caption": "Maximum file size (bytes)",
+      "editor": "DynamicValue",
+      "value": "number",
+      "default_val": 5242880,
+      "optional": true,
+      "rank": 5
+    },
+    "ABB": {
+      "name": "allowed_file_types",
+      "caption": "Allowed types (comma or space separated)",
+      "editor": "DynamicValue",
+      "value": "text",
+      "default_val": "",
+      "optional": true,
+      "rank": 6
+    }
+  },
+  "states": {
+    "ABC": {
+      "name": "is_uploading",
+      "caption": "Is uploading",
+      "value": "boolean"
+    },
+    "ABD": {
+      "name": "progress",
+      "caption": "Upload progress",
+      "value": "number"
+    },
+    "ABE": {
+      "name": "assembly_id",
+      "caption": "Assembly ID",
+      "value": "text"
+    },
+    "ABF": {
+      "name": "assembly_json",
+      "caption": "Assembly JSON",
+      "value": "text"
+    },
+    "ABG": {
+      "name": "results_json",
+      "caption": "Results JSON",
+      "value": "text"
+    },
+    "ABH": {
+      "name": "result_urls",
+      "caption": "Result URLs",
+      "value": "text",
+      "is_list": true
+    },
+    "ABI": {
+      "name": "error_message",
+      "caption": "Error message",
+      "value": "text"
+    }
+  },
+  "events": {
+    "ABJ": {
+      "name": "upload_started",
+      "caption": "Upload started"
+    },
+    "ABK": {
+      "name": "completed",
+      "caption": "Encoding completed"
+    },
+    "ABL": {
+      "name": "error",
+      "caption": "Upload error"
+    }
+  }
+}

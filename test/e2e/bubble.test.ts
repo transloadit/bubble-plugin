@@ -1,0 +1,406 @@
+import { expect, type Page, test } from '@playwright/test'
+
+import { startHarness } from './harness.ts'
+
+const real = process.env.BUBBLE_REAL_API === '1'
+if (real && (!process.env.TRANSLOADIT_KEY || !process.env.TRANSLOADIT_SECRET)) {
+  throw new Error(
+    'Real API tests require TRANSLOADIT_KEY and TRANSLOADIT_SECRET (CI: BUBBLE_E2E_TRANSLOADIT_KEY and BUBBLE_E2E_TRANSLOADIT_SECRET)',
+  )
+}
+let harness: Awaited<ReturnType<typeof startHarness>>
+const errors = new WeakMap<Page, string[]>()
+test.beforeAll(async () => {
+  harness = await startHarness()
+})
+test.afterAll(async () => {
+  await harness?.close()
+})
+test.beforeEach(async ({ page }) => {
+  const issues: string[] = []
+  errors.set(page, issues)
+  page.on('pageerror', (error) => issues.push(error.message))
+  page.on('console', (message) => {
+    if (message.type() === 'error') issues.push(message.text())
+  })
+  page.on('requestfailed', (request) => {
+    const url = new URL(request.url())
+    issues.push(`Failed request: ${url.protocol} ${url.origin} (${request.failure()?.errorText})`)
+  })
+  await page.goto(harness.url)
+})
+test.afterEach(async ({ page }) => {
+  // Request payloads and traces are deliberately not recorded: they contain signed params.
+  expect(errors.get(page)).toEqual([])
+})
+
+for (const width of [1280, 390]) {
+  test(`renders built callbacks at ${width}px and retains files on Bubble updates`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 800 })
+    // Only the generated element may publish outputs; the harness must not supply them.
+    expect(await page.evaluate(() => window.states)).toEqual({})
+    await page.evaluate(async () => {
+      await window.mount({ inline_dashboard: true })
+    })
+    await expect(page.getByRole('button', { name: 'browse files' })).toBeVisible()
+    expect((await page.locator('.uppy-Dashboard-inner').boundingBox())?.height).toBeGreaterThan(350)
+    await page.evaluate(() => {
+      window.instance.canvas[0].style.height = '500px'
+    })
+    await expect
+      .poll(async () => (await page.locator('.uppy-Dashboard-inner').boundingBox())?.height)
+      .toBe(500)
+    await page.locator('input[type=file]').first().setInputFiles('test/fixtures/upload.png')
+    await expect(page.getByText('upload.png', { exact: true })).toBeVisible()
+    await page.evaluate(() => {
+      window.updateElement(window.instance, { inline_dashboard: true }, window.context)
+    })
+    await expect(page.getByText('upload.png', { exact: true })).toBeVisible()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    await page.evaluate(() => window.resetElement(window.instance, window.context))
+    await expect(page.getByText('upload.png', { exact: true })).toHaveCount(0)
+  })
+}
+
+test('opens and closes the button Dashboard', async ({ page }) => {
+  await page.evaluate(async () => {
+    await window.mount({ inline_dashboard: false, button_label: 'Choose files' })
+  })
+  await page.getByRole('button', { name: 'Choose files', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'browse files' })).toBeVisible()
+  await page.evaluate(() => window.resetElement(window.instance, window.context))
+  await expect(page.getByRole('button', { name: 'Choose files', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Choose files', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'browse files' })).toBeVisible()
+  await page.getByRole('button', { name: 'Close Modal' }).click()
+  await expect(page.getByRole('button', { name: 'browse files' })).toBeHidden()
+})
+
+test('publishes a visible configuration error and recovers after reset', async ({ page }) => {
+  await page.evaluate(async () => {
+    await window.mount({ inline_dashboard: true })
+  })
+  await page.locator('input[type=file]').first().setInputFiles('test/fixtures/upload.png')
+  await page.getByRole('button', { name: /Upload 1 file/ }).click()
+  await expect.poll(() => page.evaluate(() => window.events.includes('error'))).toBe(true)
+  expect(await page.evaluate(() => Boolean(window.states.error_message))).toBe(true)
+  await page.evaluate(() => window.resetElement(window.instance, window.context))
+  expect(await page.evaluate(() => window.states.error_message)).toBe('')
+})
+
+test('releases modal keyboard focus when Bubble resets the element', async ({ page }) => {
+  await page.evaluate(async () => {
+    await window.mount({ inline_dashboard: false })
+    for (const label of ['Outside one', 'Outside two']) {
+      const button = document.createElement('button')
+      button.textContent = label
+      document.body.appendChild(button)
+    }
+  })
+  await page.getByRole('button', { name: 'Upload files', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'browse files' })).toBeVisible()
+  await page.evaluate(() => window.resetElement(window.instance, window.context))
+  await page.getByRole('button', { name: 'Outside one', exact: true }).focus()
+  await page.keyboard.press('Tab')
+  await expect(page.getByRole('button', { name: 'Outside two', exact: true })).toBeFocused()
+})
+
+test('reports invalid signing data when a failed file is retried', async ({ page }) => {
+  await page.evaluate(async () => window.mount({ inline_dashboard: true }))
+  await page.locator('input[type=file]').first().setInputFiles('test/fixtures/upload.png')
+  await page.getByRole('button', { name: /Upload 1 file/ }).click()
+  await expect.poll(() => page.evaluate(() => window.events.includes('error'))).toBe(true)
+  await page.evaluate(async () => {
+    window.updateElement(
+      window.instance,
+      {
+        inline_dashboard: true,
+        params: JSON.stringify({ auth: { key: 'test', expires: 'later' }, template_id: 'test' }),
+        signature: '',
+      },
+      window.context,
+    )
+    await Promise.resolve()
+    const uppy = window.getUppy()
+    await uppy.retryUpload(uppy.getFiles()[0].id).catch(() => {})
+  })
+  expect(await page.evaluate(() => window.states.is_uploading)).toBe(false)
+  expect(await page.evaluate(() => window.states.error_message)).toContain('server-signed params')
+  expect(await page.evaluate(() => window.events.filter((event) => event === 'error').length)).toBe(
+    2,
+  )
+  await expect(page.getByRole('button', { name: 'Retry upload', exact: true })).toBeVisible()
+})
+
+test('uploads a real file and exposes real processed results from the built Bubble export', async ({
+  page,
+  request,
+}) => {
+  test.skip(!real, 'Run yarn test:e2e with opentest credentials')
+  await page.evaluate(async () => window.mount({ inline_dashboard: true }))
+  await page.locator('input[type=file]').first().setInputFiles('test/fixtures/upload.png')
+  await page.getByRole('button', { name: /Upload 1 file/ }).click()
+  await expect.poll(() => page.evaluate(() => window.events.includes('error'))).toBe(true)
+  await page.evaluate(async () => {
+    const options = await fetch('/options').then((response) => response.json())
+    window.updateElement(window.instance, { ...options, inline_dashboard: true }, window.context)
+  })
+  await page.getByRole('button', { name: 'Retry upload', exact: true }).click()
+  await expect
+    .poll(() => page.evaluate(() => window.events.includes('completed')), { timeout: 100_000 })
+    .toBe(true)
+  expect(await page.evaluate(() => window.events.filter((event) => event === 'error').length)).toBe(
+    1,
+  )
+  const result = await page.evaluate(() => {
+    const { assembly_json, results_json, result_urls } = window.states
+    if (!assembly_json || !results_json || !result_urls?.length) {
+      throw new Error('The element did not publish processed Assembly outputs')
+    }
+    const assembly: { ok: string; uploads: unknown[] } = JSON.parse(assembly_json)
+    const results: { resize: { meta: { width: number; height: number } }[] } =
+      JSON.parse(results_json)
+    const file = results.resize[0]
+    return {
+      status: assembly.ok,
+      count: assembly.uploads.length,
+      width: file.meta.width,
+      height: file.meta.height,
+      url: result_urls[0],
+    }
+  })
+  expect(result.status).toBe('ASSEMBLY_COMPLETED')
+  expect(result.count).toBe(1)
+  expect(result.width).toBe(16)
+  expect(result.height).toBe(16)
+  const download = await request.get(result.url)
+  expect(download.ok()).toBe(true)
+  expect((await download.body()).length).toBeGreaterThan(0)
+  await page.evaluate(async () => {
+    window.resetElement(window.instance, window.context)
+    const options = await fetch('/options').then((response) => response.json())
+    window.updateElement(window.instance, { ...options, inline_dashboard: true }, window.context)
+  })
+  await page.locator('input[type=file]').first().setInputFiles('test/fixtures/upload.png')
+  await page.getByRole('button', { name: /Upload 1 file/ }).click()
+  await expect
+    .poll(
+      () => page.evaluate(() => window.events.filter((event) => event === 'completed').length),
+      { timeout: 100_000 },
+    )
+    .toBe(2)
+  expect(await page.evaluate(() => window.states.result_urls?.length)).toBe(1)
+  const secondUrl = await page.evaluate(() => window.states.result_urls?.[0])
+  if (!secondUrl) throw new Error('The element did not publish a result URL after reset')
+  const second = await request.get(secondUrl)
+  expect(second.ok()).toBe(true)
+  expect((await second.body()).length).toBeGreaterThan(0)
+})
+
+test('updates only the launcher label and preserves the modal close button', async ({ page }) => {
+  await page.evaluate(async () => {
+    await window.mount({ inline_dashboard: false, button_label: 'First label' })
+  })
+  await page.evaluate(() => {
+    window.updateElement(
+      window.instance,
+      { inline_dashboard: false, button_label: 'New label' },
+      window.context,
+    )
+  })
+  await expect(page.getByRole('button', { name: 'New label', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'New label', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Close Modal', exact: true })).toHaveText('×')
+})
+
+for (const restrictions of [{ max_file_size: 1 }, { allowed_file_types: '.bin' }]) {
+  test(`rechecks a selected file after restrictions change: ${JSON.stringify(restrictions)}`, async ({
+    page,
+  }) => {
+    await page.evaluate(async () => window.mount({ inline_dashboard: true }))
+    await page.locator('input[type=file]').first().setInputFiles('test/fixtures/upload.png')
+    // Wait for selection to finish loading its preview before changing the file's restrictions.
+    await expect(page.locator('.uppy-Dashboard-Item-previewImg')).toBeVisible()
+    await expect
+      .poll(() =>
+        page
+          .locator('.uppy-Dashboard-Item-previewImg')
+          .evaluate(
+            (image) =>
+              image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0,
+          ),
+      )
+      .toBe(true)
+    await page.evaluate((restrictions) => {
+      window.updateElement(
+        window.instance,
+        { inline_dashboard: true, ...restrictions },
+        window.context,
+      )
+    }, restrictions)
+    await page.getByRole('button', { name: /Upload 1 file/ }).click()
+    await expect.poll(() => page.evaluate(() => window.states.is_uploading)).toBe(false)
+    expect(await page.evaluate(() => window.states.error_message)).toMatch(/exceeds|only upload/i)
+  })
+}
+
+for (const phase of ['transfer', 'processing']) {
+  test(`starts a fresh tus upload after ${phase} failure`, async ({ page }) => {
+    const requests: string[] = []
+    await page.route(`${harness.url}/assembly/**`, (route) =>
+      route.fulfill({
+        json: { assembly_id: 'fixture', ok: 'ASSEMBLY_UPLOADING', uploads: [], results: {} },
+      }),
+    )
+    await page.route(`${harness.url}/tus/**`, async (route) => {
+      const request = route.request()
+      const path = new URL(request.url()).pathname
+      requests.push(`${request.method()} ${path}`)
+      const headers = { 'Tus-Resumable': '1.0.0' }
+      if (request.method() === 'POST') {
+        await route.fulfill({
+          status: 201,
+          headers: { ...headers, Location: `${harness.url}${path}file` },
+        })
+      } else if (
+        phase === 'transfer' &&
+        path.startsWith('/tus/1/') &&
+        request.method() === 'PATCH'
+      ) {
+        // A protocol failure without an HTTP error or automatic retry: no data reaches Assembly 1.
+        await route.fulfill({ status: 204, headers })
+      } else {
+        await route.fulfill({
+          status: request.method() === 'HEAD' ? 200 : 204,
+          headers: {
+            ...headers,
+            'Upload-Offset': request.method() === 'HEAD' ? '0' : '98',
+            'Upload-Length': '98',
+          },
+        })
+      }
+    })
+    await page.evaluate(async () => {
+      // Drive the actual processing-error path without an external API, SSE connection or telemetry.
+      window.sources = []
+      Object.defineProperty(window, 'EventSource', {
+        configurable: true,
+        writable: true,
+        // The fixture implements only the SSE listener/close surface used by the pinned SDK.
+        value: class {
+          listeners: Record<string, (event: { data: string }) => void> = {}
+          constructor() {
+            window.sources.push(this)
+          }
+          addEventListener(name: string, callback: (event: { data: string }) => void) {
+            this.listeners[name] = callback
+          }
+          close() {}
+        },
+      })
+      await window.mount({
+        inline_dashboard: true,
+        params: JSON.stringify({ auth: { key: 'test', expires: 'later' }, template_id: 'test' }),
+        signature: 'test',
+      })
+      const uppy = window.getUppy()
+      uppy.setOptions({ logger: { debug() {}, warn() {}, error() {} } })
+      const tus = uppy.getPlugin('Tus')
+      if (!tus) throw new Error('Missing Tus plugin')
+      tus.setOptions({ retryDelays: [] })
+      const transloadit = uppy.getPlugin('Transloadit')
+      if (!transloadit) throw new Error('Missing Transloadit plugin')
+      const client = transloadit.client
+      let number = 0
+      client.createAssembly = async () => {
+        number += 1
+        return {
+          assembly_id: `fixture-${number}`,
+          ok: 'ASSEMBLY_UPLOADING',
+          uploads: [],
+          results: {},
+          assembly_url: `${location.origin}/assembly/${number}`,
+          assembly_ssl_url: `${location.origin}/assembly/${number}`,
+          tus_url: `${location.origin}/tus/${number}/`,
+          websocket_url: `${location.origin}/events`,
+        }
+      }
+      client.submitError = async () => ({ ok: 'ASSEMBLY_UPLOADING', assembly_id: 'fixture' })
+      client.cancelAssembly = async () => {}
+      window.finalRequests = []
+      client.getAssemblyStatus = (url) =>
+        new Promise((resolve) => {
+          window.finalRequests.push(() =>
+            resolve({
+              assembly_id: `fixture-${url.split('/').at(-1)}`,
+              ok: 'ASSEMBLY_COMPLETED',
+              uploads: [],
+              results: {},
+            }),
+          )
+        })
+    })
+    await page.locator('input[type=file]').first().setInputFiles('test/fixtures/upload.png')
+    await page.getByRole('button', { name: /Upload 1 file/ }).click()
+    if (phase === 'processing') {
+      await expect
+        .poll(() => page.evaluate(() => window.getUppy().getFiles()[0].progress.uploadComplete))
+        .toBe(true)
+      await page.evaluate(() =>
+        window.sources[0].listeners.assembly_error({
+          data: JSON.stringify({ message: 'Intentional processing failure' }),
+        }),
+      )
+    }
+    await expect.poll(() => page.evaluate(() => window.events.includes('error'))).toBe(true)
+    await page.getByRole('button', { name: 'Retry upload', exact: true }).first().click()
+    await expect.poll(() => requests.includes('POST /tus/2/')).toBe(true)
+    expect(requests).not.toContain('HEAD /tus/1/file')
+    await expect
+      .poll(() => page.evaluate(() => window.getUppy().getFiles()[0].progress.uploadComplete))
+      .toBe(true)
+    // An already pending status request can fail after its Assembly's connection was closed.
+    await page.evaluate(() =>
+      window.sources[0].listeners.assembly_error({
+        data: JSON.stringify({ message: 'Late previous Assembly error' }),
+      }),
+    )
+    expect(await page.evaluate(() => window.states.is_uploading)).toBe(true)
+    expect(await page.evaluate(() => window.states.error_message)).toBe('')
+    await page.evaluate(() => {
+      // Polling and SSE can independently request the same final status.
+      window.sources[1].listeners.message({ data: 'assembly_finished' })
+      window.sources[1].listeners.message({ data: 'assembly_finished' })
+      window.finalRequests[0]()
+    })
+    await expect.poll(() => page.evaluate(() => window.events.includes('completed'))).toBe(true)
+    expect(await page.evaluate(() => window.states.assembly_id)).toBe('fixture-2')
+    const client = await page.evaluateHandle(() => window.getUppy())
+    await page.getByRole('button', { name: 'Done', exact: true }).click()
+    await page.locator('input[type=file]').first().setInputFiles('test/fixtures/upload.png')
+    await page.getByRole('button', { name: /Upload 1 file/ }).click()
+    await expect.poll(() => requests.includes('POST /tus/3/')).toBe(true)
+    expect(await page.evaluate((previous) => window.getUppy() === previous, client)).toBe(true)
+    await page.evaluate(() => window.finalRequests[1]())
+    expect(await page.evaluate(() => window.states.is_uploading)).toBe(true)
+    expect(await page.evaluate(() => window.states.assembly_id)).toBe('fixture-3')
+    expect(await page.evaluate(() => window.states.assembly_json)).toBe('')
+    expect(
+      await page.evaluate(() => window.events.filter((event) => event === 'completed').length),
+    ).toBe(1)
+    await page.evaluate(() => {
+      window.sources[2].listeners.message({ data: 'assembly_finished' })
+      window.finalRequests[2]()
+    })
+    await expect
+      .poll(() =>
+        page.evaluate(() => window.events.filter((event) => event === 'completed').length),
+      )
+      .toBe(2)
+    expect(await page.evaluate(() => window.states.assembly_id)).toBe('fixture-3')
+    await client.dispose()
+    await page.evaluate(() => window.resetElement(window.instance, window.context))
+  })
+}
