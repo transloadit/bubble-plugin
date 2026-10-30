@@ -19,7 +19,7 @@ jobs:
           fetch-depth: 0
           # Changesets uses its own API token; installs do not need a write credential.
           persist-credentials: false
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: '26.12.1'
       - run: npm install --global corepack@0.36.0 && corepack enable
@@ -41,7 +41,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: '26.12.1'
       - run: npm install --global corepack@0.36.0 && corepack enable
