@@ -39,6 +39,8 @@ for (const width of [1280, 390]) {
     page,
   }) => {
     await page.setViewportSize({ width, height: 800 })
+    // Only the generated element may publish outputs; the harness must not supply them.
+    expect(await page.evaluate(() => window.states)).toEqual({})
     await page.evaluate(async () => {
       await window.mount({ inline_dashboard: true })
     })
@@ -83,7 +85,7 @@ test('publishes a visible configuration error and recovers after reset', async (
   await page.locator('input[type=file]').first().setInputFiles('test/fixtures/upload.png')
   await page.getByRole('button', { name: /Upload 1 file/ }).click()
   await expect.poll(() => page.evaluate(() => window.events.includes('error'))).toBe(true)
-  expect(await page.evaluate(() => window.states.error_message.length > 0)).toBe(true)
+  expect(await page.evaluate(() => Boolean(window.states.error_message))).toBe(true)
   await page.evaluate(() => window.resetElement(window.instance, window.context))
   expect(await page.evaluate(() => window.states.error_message)).toBe('')
 })
@@ -153,17 +155,20 @@ test('uploads a real file and exposes real processed results from the built Bubb
     1,
   )
   const result = await page.evaluate(() => {
-    const assembly: { ok: string; uploads: unknown[] } = JSON.parse(window.states.assembly_json)
-    const results: { resize: { meta: { width: number; height: number } }[] } = JSON.parse(
-      window.states.results_json,
-    )
+    const { assembly_json, results_json, result_urls } = window.states
+    if (!assembly_json || !results_json || !result_urls?.length) {
+      throw new Error('The element did not publish processed Assembly outputs')
+    }
+    const assembly: { ok: string; uploads: unknown[] } = JSON.parse(assembly_json)
+    const results: { resize: { meta: { width: number; height: number } }[] } =
+      JSON.parse(results_json)
     const file = results.resize[0]
     return {
       status: assembly.ok,
       count: assembly.uploads.length,
       width: file.meta.width,
       height: file.meta.height,
-      url: window.states.result_urls[0],
+      url: result_urls[0],
     }
   })
   expect(result.status).toBe('ASSEMBLY_COMPLETED')
@@ -186,8 +191,10 @@ test('uploads a real file and exposes real processed results from the built Bubb
       { timeout: 100_000 },
     )
     .toBe(2)
-  expect(await page.evaluate(() => window.states.result_urls.length)).toBe(1)
-  const second = await request.get(await page.evaluate(() => window.states.result_urls[0]))
+  expect(await page.evaluate(() => window.states.result_urls?.length)).toBe(1)
+  const secondUrl = await page.evaluate(() => window.states.result_urls?.[0])
+  if (!secondUrl) throw new Error('The element did not publish a result URL after reset')
+  const second = await request.get(secondUrl)
   expect(second.ok()).toBe(true)
   expect((await second.body()).length).toBeGreaterThan(0)
 })

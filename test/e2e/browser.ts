@@ -10,7 +10,7 @@ interface HarnessInstance extends Instance {
 
 declare global {
   interface Window {
-    states: {
+    states: Partial<{
       is_uploading: boolean
       progress: number
       error_message: string
@@ -18,7 +18,7 @@ declare global {
       assembly_json: string
       results_json: string
       result_urls: string[]
-    }
+    }>
     events: string[]
     instance: HarnessInstance
     context: Context
@@ -35,15 +35,8 @@ declare global {
 export function start(defaults: Properties): void {
   const canvas = document.querySelector('#canvas')
   if (!(canvas instanceof HTMLElement)) throw new Error('Missing harness canvas')
-  window.states = {
-    is_uploading: false,
-    progress: 0,
-    error_message: '',
-    assembly_id: '',
-    assembly_json: '',
-    results_json: '',
-    result_urls: [],
-  }
+  // Leave outputs unpublished until the generated element supplies them.
+  window.states = {}
   window.events = []
   window.instance = {
     canvas: { 0: canvas },
