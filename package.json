@@ -13,7 +13,7 @@
   "scripts": {
     "build": "node scripts/build.ts",
     "check": "yarn lint && yarn test && yarn build && git diff --exit-code -- actions elements html_headers.html",
-    "lint": "biome check . && tsc --noEmit",
+    "lint": "biome check . && tsc --noEmit && tsc --noEmit -p tsconfig.browser.json",
     "fix": "biome check --write .",
     "test": "vitest run --coverage",
     "test:browser": "yarn build && playwright test",

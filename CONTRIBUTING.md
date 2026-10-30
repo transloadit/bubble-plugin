@@ -7,7 +7,8 @@ Bubble remains the primary plugin store. Keep `actions/`, `elements/`, `api/`,
 never rename existing opaque IDs. New element `AAu` coexists with legacy `AAp`.
 
 Handwritten code lives in TypeScript: `src/`, `scripts/`, `test/` and the root test configs.
-Node runs scripts with native type stripping; `tsc --noEmit` checks them all. Bubble callbacks
+Node runs scripts with native type stripping; `tsc --noEmit` checks them all. A separate browser
+config keeps Node globals out of `src/` and the browser harness. Bubble callbacks
 remain generated JavaScript for editor sync; the legacy `AAp` export stays unchanged.
 
 Edit TypeScript in `src/`, then run `corepack yarn build` and commit the generated callbacks and
