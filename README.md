@@ -58,7 +58,7 @@ unused; this version offers local file selection without Companion/OAuth configu
 
 ## Develop
 
-Use Node 22.23.4+ (CI also tests 26.12.1) and Yarn 4.12 via Corepack:
+Use Node 22.23.5+ (CI also tests 26.13.1) and Yarn 4.12 via Corepack:
 
 ```sh
 corepack yarn install
